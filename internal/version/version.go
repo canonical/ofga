@@ -1,4 +1,4 @@
-// Copyright 2022 Canonical Ltd.
+// Copyright 2023 Canonical Ltd.
 
 // Package version provides server version information.
 package version
