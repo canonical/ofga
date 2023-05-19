@@ -9,7 +9,7 @@ type Kind string
 
 // String implements the Stringer interface.
 func (k Kind) String() string {
-	return string(k)
+	return k.String()
 }
 
 // Relation represents the type of relation between entities in OpenFGA.
@@ -17,7 +17,7 @@ type Relation string
 
 // String implements the Stringer interface.
 func (r Relation) String() string {
-	return string(r)
+	return r.String()
 }
 
 // Entity represents an entity/entity-set in OpenFGA.
@@ -31,7 +31,7 @@ type Entity struct {
 // String returns a string representation of the entity/entity-set.
 func (e *Entity) String() string {
 	if e.Relation == "" {
-		return string(e.Kind) + ":" + e.ID
+		return e.Kind.String() + ":" + e.ID
 	}
 	return e.Kind.String() + ":" + e.ID + "#" + e.Relation.String()
 }
@@ -56,7 +56,7 @@ func (t Tuple) toOpenFGATuple() openfga.TupleKey {
 	}
 	// in some cases specifying the relation is not required
 	if t.Relation != "" {
-		k.SetRelation(string(t.Relation))
+		k.SetRelation(t.Relation.String())
 	}
 	k.SetObject(t.Target.String())
 	return *k
