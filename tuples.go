@@ -9,7 +9,7 @@ type Kind string
 
 // String implements the Stringer interface.
 func (k Kind) String() string {
-	return k.String()
+	return string(k)
 }
 
 // Relation represents the type of relation between entities in OpenFGA.
@@ -17,7 +17,7 @@ type Relation string
 
 // String implements the Stringer interface.
 func (r Relation) String() string {
-	return r.String()
+	return string(r)
 }
 
 // Entity represents an entity/entity-set in OpenFGA.
