@@ -5,9 +5,8 @@ package version_test
 import (
 	"testing"
 
-	qt "github.com/frankban/quicktest"
-
 	"github.com/canonical/ofga/internal/version"
+	qt "github.com/frankban/quicktest"
 )
 
 func TestInfo(t *testing.T) {
