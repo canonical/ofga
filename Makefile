@@ -41,6 +41,12 @@ fmt: $(SORTIMPORTS) $(GOFUMPT)  ## Reformat code
 test:  ## Run tests (runs 'go test ./...')
 	go test ./...
 
+.PHONY: test-coverage
+test-coverage:
+	go test -coverprofile cover.out ./... && \
+	go tool cover -html=./cover.out -o cover.html && \
+	xdg-open cover.html
+
 # This build target may not necessarily be used much depending on our deployment strategy, but is kept here nonetheless as a reference for how to 
 # build while inserting the git commit into the version info
 .PHONY: build

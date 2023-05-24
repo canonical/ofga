@@ -1,3 +1,6 @@
+// Copyright 2023 Canonical Ltd.
+
+// Package ofga provides utilities for interacting with an OpenFGA instance
 package ofga
 
 import (
@@ -15,7 +18,9 @@ import (
 
 // OpenFGAParams holds parameters needed to connect to the OpenFGA server.
 type OpenFGAParams struct {
-	Scheme      string
+	Scheme string
+	// The host must be specified without the scheme
+	// (i.e. `api.fga.example` instead of `https://api.fga.example`).
 	Host        string
 	Port        string
 	Token       string
@@ -54,7 +59,7 @@ func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 
 	config := openfga.Configuration{
 		ApiScheme: p.Scheme,
-		ApiHost:   fmt.Sprintf("%s:%s", p.Host, p.Port), // The host must be specified without the scheme (i.e. `api.fga.example` instead of `https://api.fga.example`).
+		ApiHost:   fmt.Sprintf("%s:%s", p.Host, p.Port),
 		StoreId:   p.StoreID,
 	}
 	if p.Token != "" {
@@ -146,8 +151,8 @@ func (c *Client) CheckRelation(ctx context.Context, tuple Tuple) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	zapctx.Debug(ctx, "check request internal resp code", zap.Int("code", httpResp.StatusCode))
 	allowed := checkResp.GetAllowed()
+	zapctx.Debug(ctx, "check request internal resp code", zap.Int("code", httpResp.StatusCode), zap.Bool("allowed", allowed))
 	return allowed, nil
 }
 
