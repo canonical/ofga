@@ -1,3 +1,5 @@
+// Copyright 2023 Canonical Ltd.
+
 package ofga_test
 
 import (
@@ -25,147 +27,127 @@ func TestNewClient(t *testing.T) {
 
 	tests := []struct {
 		about               string
-		ctx                 context.Context
 		params              ofga.OpenFGAParams
 		api                 ofga.OpenFgaApi
 		expectedErr         string
 		expectedAuthModelID string
-	}{
-		{
-			about: "client creation fails when Host param is missing",
-			ctx:   context.Background(),
-			params: ofga.OpenFGAParams{
-				Scheme:      "http",
-				Host:        "",
-				Port:        "8080",
-				Token:       "InsecureTokenDoNotUse",
-				StoreID:     "TestStoreID",
-				AuthModelID: "TestAuthModelID",
-			},
-			api:         &MockOpenFgaApi{},
-			expectedErr: "OpenFGA configuration: missing host",
+	}{{
+		about: "client creation fails when Host param is missing",
+		params: ofga.OpenFGAParams{
+			Scheme:      "http",
+			Host:        "",
+			Port:        "8080",
+			Token:       "InsecureTokenDoNotUse",
+			StoreID:     "TestStoreID",
+			AuthModelID: "TestAuthModelID",
 		},
-		{
-			about: "client creation fails when Port param is missing",
-			ctx:   context.Background(),
-			params: ofga.OpenFGAParams{
-				Scheme:      "http",
-				Host:        "localhost",
-				Port:        "",
-				Token:       "InsecureTokenDoNotUse",
-				StoreID:     "TestStoreID",
-				AuthModelID: "TestAuthModelID",
-			},
-			api:         &MockOpenFgaApi{},
-			expectedErr: "OpenFGA configuration: missing port",
+		api:         &MockOpenFgaApi{},
+		expectedErr: "OpenFGA configuration: missing host",
+	}, {
+		about: "client creation fails when Port param is missing",
+		params: ofga.OpenFGAParams{
+			Scheme:      "http",
+			Host:        "localhost",
+			Port:        "",
+			Token:       "InsecureTokenDoNotUse",
+			StoreID:     "TestStoreID",
+			AuthModelID: "TestAuthModelID",
 		},
-		{
-			about: "client creation fails when AuthModelID is specified without a StoreID",
-			ctx:   context.Background(),
-			params: ofga.OpenFGAParams{
-				Scheme:      "http",
-				Host:        "localhost",
-				Port:        "8080",
-				Token:       "InsecureTokenDoNotUse",
-				StoreID:     "",
-				AuthModelID: "TestAuthModelID",
-			},
-			api:         &MockOpenFgaApi{},
-			expectedErr: "OpenFGA configuration: AuthModelID specified without a StoreID",
+		api:         &MockOpenFgaApi{},
+		expectedErr: "OpenFGA configuration: missing port",
+	}, {
+		about: "client creation fails when AuthModelID is specified without a StoreID",
+		params: ofga.OpenFGAParams{
+			Scheme:      "http",
+			Host:        "localhost",
+			Port:        "8080",
+			Token:       "InsecureTokenDoNotUse",
+			StoreID:     "",
+			AuthModelID: "TestAuthModelID",
 		},
-		{
-			about: "client creation fails when AuthModelID is specified without a StoreID",
-			ctx:   context.Background(),
-			params: ofga.OpenFGAParams{
-				Scheme:      "http",
-				Host:        "localhost",
-				Port:        "8080",
-				Token:       "InsecureTokenDoNotUse",
-				StoreID:     "",
-				AuthModelID: "TestAuthModelID",
-			},
-			api:         &MockOpenFgaApi{},
-			expectedErr: "OpenFGA configuration: AuthModelID specified without a StoreID",
+		api:         &MockOpenFgaApi{},
+		expectedErr: "OpenFGA configuration: AuthModelID specified without a StoreID",
+	}, {
+		about: "client creation fails when AuthModelID is specified without a StoreID",
+		params: ofga.OpenFGAParams{
+			Scheme:      "http",
+			Host:        "localhost",
+			Port:        "8080",
+			Token:       "InsecureTokenDoNotUse",
+			StoreID:     "",
+			AuthModelID: "TestAuthModelID",
 		},
-		{
-			about:  "client creation fails when we are unable to list stores from openFGA",
-			ctx:    context.Background(),
-			params: completeParams,
-			api: &MockOpenFgaApi{
-				listStoreResp: MockResponse[openfga.ListStoresResponse]{
-					err: errors.New("simulated error while executing List Stores"),
-				},
-			},
-			expectedErr: "cannot list stores.*",
-		},
-		{
-			about:  "client creation fails when we get a non-200 response for a List Stores request to openFGA",
-			ctx:    context.Background(),
-			params: completeParams,
-			api: &MockOpenFgaApi{
-				listStoreResp: MockResponse[openfga.ListStoresResponse]{
-					httpResp: &http.Response{StatusCode: http.StatusBadRequest},
-				},
-			},
-			expectedErr: "failed to contact the OpenFga server.*",
-		},
-		{
-			about:  "client creation fails when StoreID is specified but the Get Store request returns an error",
-			ctx:    context.Background(),
-			params: completeParams,
-			api: &MockOpenFgaApi{
-				listStoreResp: MockResponse[openfga.ListStoresResponse]{
-					httpResp: &http.Response{StatusCode: http.StatusOK},
-				},
-				getStoreResp: MockResponse[openfga.GetStoreResponse]{
-					err: errors.New("simulated error while executing Get Store"),
-				},
-			},
-			expectedErr: "cannot retrieve store.*",
-		},
-		{
-			about:  "client creation fails when AuthModelID is specified but the Read Authorization Model request returns an error",
-			ctx:    context.Background(),
-			params: completeParams,
-			api: &MockOpenFgaApi{
-				listStoreResp: MockResponse[openfga.ListStoresResponse]{
-					httpResp: &http.Response{StatusCode: http.StatusOK},
-				},
-				getStoreResp: MockResponse[openfga.GetStoreResponse]{
-					resp: openfga.GetStoreResponse{Name: openfga.PtrString("Test Store")},
-				},
-				readAuthModelResp: MockResponse[openfga.ReadAuthorizationModelResponse]{
-					err: errors.New("simulated error while executing Read Authorization Model"),
-				},
-			},
-			expectedErr: "cannot retrieve authModel.*",
-		},
-		{
-			about:  "client created successfully",
-			ctx:    context.Background(),
-			params: completeParams,
-			api: &MockOpenFgaApi{
-				listStoreResp: MockResponse[openfga.ListStoresResponse]{
-					httpResp: &http.Response{StatusCode: http.StatusOK},
-				},
-				getStoreResp: MockResponse[openfga.GetStoreResponse]{
-					resp: openfga.GetStoreResponse{Name: openfga.PtrString("Test Store")},
-				},
-				readAuthModelResp: MockResponse[openfga.ReadAuthorizationModelResponse]{
-					resp: openfga.ReadAuthorizationModelResponse{AuthorizationModel: &openfga.AuthorizationModel{
-						Id: openfga.PtrString(completeParams.AuthModelID),
-					}},
-				},
+		api:         &MockOpenFgaApi{},
+		expectedErr: "OpenFGA configuration: AuthModelID specified without a StoreID",
+	}, {
+		about:  "client creation fails when we are unable to list stores from openFGA",
+		params: completeParams,
+		api: &MockOpenFgaApi{
+			listStoreResp: MockResponse[openfga.ListStoresResponse]{
+				err: errors.New("simulated error while executing List Stores"),
 			},
 		},
-	}
+		expectedErr: "cannot list stores.*",
+	}, {
+		about:  "client creation fails when we get a non-200 response for a List Stores request to openFGA",
+		params: completeParams,
+		api: &MockOpenFgaApi{
+			listStoreResp: MockResponse[openfga.ListStoresResponse]{
+				httpResp: &http.Response{StatusCode: http.StatusBadRequest},
+			},
+		},
+		expectedErr: "failed to contact the OpenFga server.*",
+	}, {
+		about:  "client creation fails when StoreID is specified but the Get Store request returns an error",
+		params: completeParams,
+		api: &MockOpenFgaApi{
+			listStoreResp: MockResponse[openfga.ListStoresResponse]{
+				httpResp: &http.Response{StatusCode: http.StatusOK},
+			},
+			getStoreResp: MockResponse[openfga.GetStoreResponse]{
+				err: errors.New("simulated error while executing Get Store"),
+			},
+		},
+		expectedErr: "cannot retrieve store.*",
+	}, {
+		about:  "client creation fails when AuthModelID is specified but the Read Authorization Model request returns an error",
+		params: completeParams,
+		api: &MockOpenFgaApi{
+			listStoreResp: MockResponse[openfga.ListStoresResponse]{
+				httpResp: &http.Response{StatusCode: http.StatusOK},
+			},
+			getStoreResp: MockResponse[openfga.GetStoreResponse]{
+				resp: openfga.GetStoreResponse{Name: openfga.PtrString("Test Store")},
+			},
+			readAuthModelResp: MockResponse[openfga.ReadAuthorizationModelResponse]{
+				err: errors.New("simulated error while executing Read Authorization Model"),
+			},
+		},
+		expectedErr: "cannot retrieve authModel.*",
+	}, {
+		about:  "client created successfully",
+		params: completeParams,
+		api: &MockOpenFgaApi{
+			listStoreResp: MockResponse[openfga.ListStoresResponse]{
+				httpResp: &http.Response{StatusCode: http.StatusOK},
+			},
+			getStoreResp: MockResponse[openfga.GetStoreResponse]{
+				resp: openfga.GetStoreResponse{Name: openfga.PtrString("Test Store")},
+			},
+			readAuthModelResp: MockResponse[openfga.ReadAuthorizationModelResponse]{
+				resp: openfga.ReadAuthorizationModelResponse{AuthorizationModel: &openfga.AuthorizationModel{
+					Id: openfga.PtrString(completeParams.AuthModelID),
+				}},
+			},
+		},
+	}}
 
 	for _, test := range tests {
 		test := test
 		c.Run(test.about, func(c *qt.C) {
 			c.Parallel()
 
-			client, err := ofga.NewClientInternalExport(test.ctx, test.params, test.api)
+			client, err := ofga.NewClientInternalExport(context.Background(), test.params, test.api)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
@@ -192,7 +174,6 @@ func TestClient_AddRelation(t *testing.T) {
 		Kind: "user",
 		ID:   "123",
 	}
-	const Editor ofga.Relation = "editor"
 	contract := ofga.Entity{
 		Kind: "contract",
 		ID:   "789",
@@ -200,79 +181,74 @@ func TestClient_AddRelation(t *testing.T) {
 
 	tests := []struct {
 		about       string
-		ctx         context.Context
 		params      ofga.OpenFGAParams
 		api         ofga.OpenFgaApi
 		tuples      []ofga.Tuple
 		expectedErr string
-	}{
-		{
-			about:  "error returned by the client is returned to the caller",
-			ctx:    context.Background(),
-			params: completeParams,
-			api: &MockOpenFgaApi{
-				listStoreResp: MockResponse[openfga.ListStoresResponse]{
-					httpResp: &http.Response{StatusCode: http.StatusOK},
-				},
-				getStoreResp: MockResponse[openfga.GetStoreResponse]{
-					resp: openfga.GetStoreResponse{Name: openfga.PtrString("Test Store")},
-				},
-				readAuthModelResp: MockResponse[openfga.ReadAuthorizationModelResponse]{
-					resp: openfga.ReadAuthorizationModelResponse{AuthorizationModel: &openfga.AuthorizationModel{
-						Id: openfga.PtrString(completeParams.AuthModelID),
-					}},
-				},
-				writeResp: MockResponse[WriteResponse]{
-					err: errors.New("simulated error while executing write"),
-				},
+	}{{
+		about:  "error returned by the client is returned to the caller",
+		params: completeParams,
+		api: &MockOpenFgaApi{
+			listStoreResp: MockResponse[openfga.ListStoresResponse]{
+				httpResp: &http.Response{StatusCode: http.StatusOK},
 			},
-			tuples: []ofga.Tuple{
-				{
-					Object:   &user,
-					Relation: Editor,
-					Target:   &contract,
-				},
+			getStoreResp: MockResponse[openfga.GetStoreResponse]{
+				resp: openfga.GetStoreResponse{Name: openfga.PtrString("Test Store")},
 			},
-			expectedErr: "simulated error while executing write",
-		},
-		{
-			about:  "relation added successfully",
-			ctx:    context.Background(),
-			params: completeParams,
-			api: &MockOpenFgaApi{
-				listStoreResp: MockResponse[openfga.ListStoresResponse]{
-					httpResp: &http.Response{StatusCode: http.StatusOK},
-				},
-				getStoreResp: MockResponse[openfga.GetStoreResponse]{
-					resp: openfga.GetStoreResponse{Name: openfga.PtrString("Test Store")},
-				},
-				readAuthModelResp: MockResponse[openfga.ReadAuthorizationModelResponse]{
-					resp: openfga.ReadAuthorizationModelResponse{AuthorizationModel: &openfga.AuthorizationModel{
-						Id: openfga.PtrString(completeParams.AuthModelID),
-					}},
-				},
-				writeResp: MockResponse[WriteResponse]{},
+			readAuthModelResp: MockResponse[openfga.ReadAuthorizationModelResponse]{
+				resp: openfga.ReadAuthorizationModelResponse{AuthorizationModel: &openfga.AuthorizationModel{
+					Id: openfga.PtrString(completeParams.AuthModelID),
+				}},
 			},
-			tuples: []ofga.Tuple{
-				{
-					Object:   &user,
-					Relation: Editor,
-					Target:   &contract,
-				},
+			writeResp: MockResponse[WriteResponse]{
+				err: errors.New("simulated error while executing write"),
 			},
 		},
-	}
+		tuples: []ofga.Tuple{
+			{
+				Object:   &user,
+				Relation: Editor,
+				Target:   &contract,
+			},
+		},
+		expectedErr: "simulated error while executing write",
+	}, {
+		about:  "relation added successfully",
+		params: completeParams,
+		api: &MockOpenFgaApi{
+			listStoreResp: MockResponse[openfga.ListStoresResponse]{
+				httpResp: &http.Response{StatusCode: http.StatusOK},
+			},
+			getStoreResp: MockResponse[openfga.GetStoreResponse]{
+				resp: openfga.GetStoreResponse{Name: openfga.PtrString("Test Store")},
+			},
+			readAuthModelResp: MockResponse[openfga.ReadAuthorizationModelResponse]{
+				resp: openfga.ReadAuthorizationModelResponse{AuthorizationModel: &openfga.AuthorizationModel{
+					Id: openfga.PtrString(completeParams.AuthModelID),
+				}},
+			},
+			writeResp: MockResponse[WriteResponse]{},
+		},
+		tuples: []ofga.Tuple{
+			{
+				Object:   &user,
+				Relation: Editor,
+				Target:   &contract,
+			},
+		},
+	}}
 
 	for _, test := range tests {
 		test := test
 		c.Run(test.about, func(c *qt.C) {
 			c.Parallel()
 
-			client, err := ofga.NewClientInternalExport(test.ctx, test.params, test.api)
+			ctx := context.Background()
+			client, err := ofga.NewClientInternalExport(ctx, test.params, test.api)
 			c.Assert(err, qt.IsNil)
 			c.Assert(client.AuthModelId, qt.DeepEquals, test.params.AuthModelID)
 
-			err = client.AddRelation(test.ctx, test.tuples...)
+			err = client.AddRelation(ctx, test.tuples...)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
@@ -298,7 +274,6 @@ func TestClient_CheckRelation(t *testing.T) {
 		Kind: "user",
 		ID:   "123",
 	}
-	const Editor ofga.Relation = "editor"
 	contract := ofga.Entity{
 		Kind: "contract",
 		ID:   "789",
@@ -306,80 +281,75 @@ func TestClient_CheckRelation(t *testing.T) {
 
 	tests := []struct {
 		about           string
-		ctx             context.Context
 		params          ofga.OpenFGAParams
 		api             ofga.OpenFgaApi
 		tuple           ofga.Tuple
 		expectedErr     string
 		expectedAllowed bool
-	}{
-		{
-			about:  "error returned by the client is returned to the caller",
-			ctx:    context.Background(),
-			params: completeParams,
-			api: &MockOpenFgaApi{
-				listStoreResp: MockResponse[openfga.ListStoresResponse]{
-					httpResp: &http.Response{StatusCode: http.StatusOK},
-				},
-				getStoreResp: MockResponse[openfga.GetStoreResponse]{
-					resp: openfga.GetStoreResponse{Name: openfga.PtrString("Test Store")},
-				},
-				readAuthModelResp: MockResponse[openfga.ReadAuthorizationModelResponse]{
-					resp: openfga.ReadAuthorizationModelResponse{AuthorizationModel: &openfga.AuthorizationModel{
-						Id: openfga.PtrString(completeParams.AuthModelID),
-					}},
-				},
-				checkResp: MockResponse[openfga.CheckResponse]{
-					err: errors.New("simulated error while executing check"),
-				},
+	}{{
+		about:  "error returned by the client is returned to the caller",
+		params: completeParams,
+		api: &MockOpenFgaApi{
+			listStoreResp: MockResponse[openfga.ListStoresResponse]{
+				httpResp: &http.Response{StatusCode: http.StatusOK},
 			},
-			tuple: ofga.Tuple{
-				Object:   &user,
-				Relation: Editor,
-				Target:   &contract,
+			getStoreResp: MockResponse[openfga.GetStoreResponse]{
+				resp: openfga.GetStoreResponse{Name: openfga.PtrString("Test Store")},
 			},
-			expectedErr: "simulated error while executing check",
+			readAuthModelResp: MockResponse[openfga.ReadAuthorizationModelResponse]{
+				resp: openfga.ReadAuthorizationModelResponse{AuthorizationModel: &openfga.AuthorizationModel{
+					Id: openfga.PtrString(completeParams.AuthModelID),
+				}},
+			},
+			checkResp: MockResponse[openfga.CheckResponse]{
+				err: errors.New("simulated error while executing check"),
+			},
 		},
-		{
-			about:  "relation checked successfully",
-			ctx:    context.Background(),
-			params: completeParams,
-			api: &MockOpenFgaApi{
-				listStoreResp: MockResponse[openfga.ListStoresResponse]{
-					httpResp: &http.Response{StatusCode: http.StatusOK},
-				},
-				getStoreResp: MockResponse[openfga.GetStoreResponse]{
-					resp: openfga.GetStoreResponse{Name: openfga.PtrString("Test Store")},
-				},
-				readAuthModelResp: MockResponse[openfga.ReadAuthorizationModelResponse]{
-					resp: openfga.ReadAuthorizationModelResponse{AuthorizationModel: &openfga.AuthorizationModel{
-						Id: openfga.PtrString(completeParams.AuthModelID),
-					}},
-				},
-				checkResp: MockResponse[openfga.CheckResponse]{
-					resp:     openfga.CheckResponse{Allowed: openfga.PtrBool(true)},
-					httpResp: &http.Response{StatusCode: http.StatusOK},
-				},
-			},
-			tuple: ofga.Tuple{
-				Object:   &user,
-				Relation: Editor,
-				Target:   &contract,
-			},
-			expectedAllowed: true,
+		tuple: ofga.Tuple{
+			Object:   &user,
+			Relation: Editor,
+			Target:   &contract,
 		},
-	}
+		expectedErr: "simulated error while executing check",
+	}, {
+		about:  "relation checked successfully",
+		params: completeParams,
+		api: &MockOpenFgaApi{
+			listStoreResp: MockResponse[openfga.ListStoresResponse]{
+				httpResp: &http.Response{StatusCode: http.StatusOK},
+			},
+			getStoreResp: MockResponse[openfga.GetStoreResponse]{
+				resp: openfga.GetStoreResponse{Name: openfga.PtrString("Test Store")},
+			},
+			readAuthModelResp: MockResponse[openfga.ReadAuthorizationModelResponse]{
+				resp: openfga.ReadAuthorizationModelResponse{AuthorizationModel: &openfga.AuthorizationModel{
+					Id: openfga.PtrString(completeParams.AuthModelID),
+				}},
+			},
+			checkResp: MockResponse[openfga.CheckResponse]{
+				resp:     openfga.CheckResponse{Allowed: openfga.PtrBool(true)},
+				httpResp: &http.Response{StatusCode: http.StatusOK},
+			},
+		},
+		tuple: ofga.Tuple{
+			Object:   &user,
+			Relation: Editor,
+			Target:   &contract,
+		},
+		expectedAllowed: true,
+	}}
 
 	for _, test := range tests {
 		test := test
 		c.Run(test.about, func(c *qt.C) {
 			c.Parallel()
 
-			client, err := ofga.NewClientInternalExport(test.ctx, test.params, test.api)
+			ctx := context.Background()
+			client, err := ofga.NewClientInternalExport(ctx, test.params, test.api)
 			c.Assert(err, qt.IsNil)
 			c.Assert(client.AuthModelId, qt.DeepEquals, test.params.AuthModelID)
 
-			allowed, err := client.CheckRelation(test.ctx, test.tuple)
+			allowed, err := client.CheckRelation(ctx, test.tuple)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
@@ -406,7 +376,6 @@ func TestClient_RemoveRelation(t *testing.T) {
 		Kind: "user",
 		ID:   "123",
 	}
-	const Editor ofga.Relation = "editor"
 	contract := ofga.Entity{
 		Kind: "contract",
 		ID:   "789",
@@ -414,75 +383,70 @@ func TestClient_RemoveRelation(t *testing.T) {
 
 	tests := []struct {
 		about       string
-		ctx         context.Context
 		params      ofga.OpenFGAParams
 		api         ofga.OpenFgaApi
 		tuple       ofga.Tuple
 		expectedErr string
-	}{
-		{
-			about:  "error returned by the client is returned to the caller",
-			ctx:    context.Background(),
-			params: completeParams,
-			api: &MockOpenFgaApi{
-				listStoreResp: MockResponse[openfga.ListStoresResponse]{
-					httpResp: &http.Response{StatusCode: http.StatusOK},
-				},
-				getStoreResp: MockResponse[openfga.GetStoreResponse]{
-					resp: openfga.GetStoreResponse{Name: openfga.PtrString("Test Store")},
-				},
-				readAuthModelResp: MockResponse[openfga.ReadAuthorizationModelResponse]{
-					resp: openfga.ReadAuthorizationModelResponse{AuthorizationModel: &openfga.AuthorizationModel{
-						Id: openfga.PtrString(completeParams.AuthModelID),
-					}},
-				},
-				writeResp: MockResponse[WriteResponse]{
-					err: errors.New("simulated error while executing write"),
-				},
+	}{{
+		about:  "error returned by the client is returned to the caller",
+		params: completeParams,
+		api: &MockOpenFgaApi{
+			listStoreResp: MockResponse[openfga.ListStoresResponse]{
+				httpResp: &http.Response{StatusCode: http.StatusOK},
 			},
-			tuple: ofga.Tuple{
-				Object:   &user,
-				Relation: Editor,
-				Target:   &contract,
+			getStoreResp: MockResponse[openfga.GetStoreResponse]{
+				resp: openfga.GetStoreResponse{Name: openfga.PtrString("Test Store")},
 			},
-			expectedErr: "simulated error while executing write",
-		},
-		{
-			about:  "relation removed successfully",
-			ctx:    context.Background(),
-			params: completeParams,
-			api: &MockOpenFgaApi{
-				listStoreResp: MockResponse[openfga.ListStoresResponse]{
-					httpResp: &http.Response{StatusCode: http.StatusOK},
-				},
-				getStoreResp: MockResponse[openfga.GetStoreResponse]{
-					resp: openfga.GetStoreResponse{Name: openfga.PtrString("Test Store")},
-				},
-				readAuthModelResp: MockResponse[openfga.ReadAuthorizationModelResponse]{
-					resp: openfga.ReadAuthorizationModelResponse{AuthorizationModel: &openfga.AuthorizationModel{
-						Id: openfga.PtrString(completeParams.AuthModelID),
-					}},
-				},
-				writeResp: MockResponse[WriteResponse]{},
+			readAuthModelResp: MockResponse[openfga.ReadAuthorizationModelResponse]{
+				resp: openfga.ReadAuthorizationModelResponse{AuthorizationModel: &openfga.AuthorizationModel{
+					Id: openfga.PtrString(completeParams.AuthModelID),
+				}},
 			},
-			tuple: ofga.Tuple{
-				Object:   &user,
-				Relation: Editor,
-				Target:   &contract,
+			writeResp: MockResponse[WriteResponse]{
+				err: errors.New("simulated error while executing remove"),
 			},
 		},
-	}
+		tuple: ofga.Tuple{
+			Object:   &user,
+			Relation: Editor,
+			Target:   &contract,
+		},
+		expectedErr: "simulated error while executing remove",
+	}, {
+		about:  "relation removed successfully",
+		params: completeParams,
+		api: &MockOpenFgaApi{
+			listStoreResp: MockResponse[openfga.ListStoresResponse]{
+				httpResp: &http.Response{StatusCode: http.StatusOK},
+			},
+			getStoreResp: MockResponse[openfga.GetStoreResponse]{
+				resp: openfga.GetStoreResponse{Name: openfga.PtrString("Test Store")},
+			},
+			readAuthModelResp: MockResponse[openfga.ReadAuthorizationModelResponse]{
+				resp: openfga.ReadAuthorizationModelResponse{AuthorizationModel: &openfga.AuthorizationModel{
+					Id: openfga.PtrString(completeParams.AuthModelID),
+				}},
+			},
+			writeResp: MockResponse[WriteResponse]{},
+		},
+		tuple: ofga.Tuple{
+			Object:   &user,
+			Relation: Editor,
+			Target:   &contract,
+		},
+	}}
 
 	for _, test := range tests {
 		test := test
 		c.Run(test.about, func(c *qt.C) {
 			c.Parallel()
 
-			client, err := ofga.NewClientInternalExport(test.ctx, test.params, test.api)
+			ctx := context.Background()
+			client, err := ofga.NewClientInternalExport(ctx, test.params, test.api)
 			c.Assert(err, qt.IsNil)
 			c.Assert(client.AuthModelId, qt.DeepEquals, test.params.AuthModelID)
 
-			err = client.RemoveRelation(test.ctx, test.tuple)
+			err = client.RemoveRelation(ctx, test.tuple)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
