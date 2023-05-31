@@ -1,5 +1,6 @@
 package ofga
 
 var (
-	ToOpenFGATuple = (*Tuple).toOpenFGATuple
+	ToOpenFGATuple          = (*Tuple).toOpenFGATuple
+	NewClientInternalExport = newClient
 )
