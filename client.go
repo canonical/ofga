@@ -1,3 +1,6 @@
+// Copyright 2023 Canonical Ltd.
+
+// Package ofga provides utilities for interacting with an OpenFGA instance.
 package ofga
 
 import (
@@ -15,12 +18,24 @@ import (
 
 // OpenFGAParams holds parameters needed to connect to the OpenFGA server.
 type OpenFGAParams struct {
-	Scheme      string
+	Scheme string
+	// The host must be specified without the scheme
+	// (i.e. `api.fga.example` instead of `https://api.fga.example`).
 	Host        string
 	Port        string
 	Token       string
 	StoreID     string
 	AuthModelID string
+}
+
+// OpenFgaApi defines the methods of the underlying api client that our Client
+// depends upon.
+type OpenFgaApi interface {
+	ListStores(ctx context.Context) openfga.ApiListStoresRequest
+	GetStore(ctx context.Context) openfga.ApiGetStoreRequest
+	ReadAuthorizationModel(ctx context.Context, id string) openfga.ApiReadAuthorizationModelRequest
+	Write(ctx context.Context) openfga.ApiWriteRequest
+	Check(ctx context.Context) openfga.ApiCheckRequest
 }
 
 // Client is a wrapper over the client provided by OpenFGA
@@ -29,13 +44,18 @@ type OpenFGAParams struct {
 // connect to the specified OpenFGA instance, and verifies the existence of a
 // Store and AuthorizationModel if such IDs are provided during configuration.
 type Client struct {
-	api         openfga.OpenFgaApi
+	api         OpenFgaApi
 	AuthModelId string
 }
 
 // NewClient returns a wrapped OpenFGA API client ensuring all calls are made
 // to the provided authorisation model (id) and returns what is necessary.
 func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
+	return newClient(ctx, p, nil)
+}
+
+// newClient allows passing in a mock api object for testing.
+func newClient(ctx context.Context, p OpenFGAParams, api OpenFgaApi) (*Client, error) {
 	if p.Host == "" {
 		return nil, errors.New("OpenFGA configuration: missing host")
 	}
@@ -54,7 +74,7 @@ func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 
 	config := openfga.Configuration{
 		ApiScheme: p.Scheme,
-		ApiHost:   fmt.Sprintf("%s:%s", p.Host, p.Port), // The host must be specified without the scheme (i.e. `api.fga.example` instead of `https://api.fga.example`).
+		ApiHost:   fmt.Sprintf("%s:%s", p.Host, p.Port),
 		StoreId:   p.StoreID,
 	}
 	if p.Token != "" {
@@ -69,18 +89,23 @@ func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	client := openfga.NewAPIClient(configuration)
-	api := client.OpenFgaApi
-
+	if api == nil {
+		client := openfga.NewAPIClient(configuration)
+		api = client.OpenFgaApi
+	}
 	_, response, err := api.ListStores(ctx).Execute()
 	if err != nil {
-		return nil, err
+		zapctx.Error(ctx, fmt.Sprintf("cannot list stores %q", err))
+		return nil, fmt.Errorf("cannot list stores %q", err)
 	}
 	if response.StatusCode != http.StatusOK {
 		// The response body is only used as extra information in the error
 		// message, so if an error occurred while trying to read the response
 		// body, we can just ignore it.
-		body, _ := io.ReadAll(response.Body)
+		var body []byte
+		if response.Body != nil {
+			body, _ = io.ReadAll(response.Body)
+		}
 		return nil, fmt.Errorf("failed to contact the OpenFga server: received %v: %s", response.StatusCode, string(body))
 	}
 
@@ -89,9 +114,9 @@ func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 		storeResp, _, err := api.GetStore(ctx).Execute()
 		if err != nil {
 			zapctx.Error(ctx, fmt.Sprintf("cannot retrieve store %q", err))
-			return nil, errors.New("cannot retrieve store")
+			return nil, fmt.Errorf("cannot retrieve store %q", err)
 		}
-		zapctx.Info(ctx, "store found", zap.String("storeName", *storeResp.Name))
+		zapctx.Info(ctx, "store found", zap.String("storeName", storeResp.GetName()))
 	}
 
 	// If AuthModelID is present, validate that such an AuthModel exists.
@@ -99,12 +124,12 @@ func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 		authModelResp, _, err := api.ReadAuthorizationModel(ctx, p.AuthModelID).Execute()
 		if err != nil {
 			zapctx.Error(ctx, fmt.Sprintf("cannot retrieve authModel %q", err))
-			return nil, errors.New("cannot retrieve authModel")
+			return nil, fmt.Errorf("cannot retrieve authModel %q", err)
 		}
 		zapctx.Info(ctx, "auth model found", zap.String("authModelID", authModelResp.AuthorizationModel.GetId()))
 	}
 	return &Client{
-		api:         client.OpenFgaApi,
+		api:         api,
 		AuthModelId: p.AuthModelID,
 	}, nil
 }
@@ -146,8 +171,8 @@ func (c *Client) CheckRelation(ctx context.Context, tuple Tuple) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	zapctx.Debug(ctx, "check request internal resp code", zap.Int("code", httpResp.StatusCode))
 	allowed := checkResp.GetAllowed()
+	zapctx.Debug(ctx, "check request internal resp code", zap.Int("code", httpResp.StatusCode), zap.Bool("allowed", allowed))
 	return allowed, nil
 }
 

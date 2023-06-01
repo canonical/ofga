@@ -1,6 +1,5 @@
 GOPATH := $(shell go env GOPATH)
 GOFUMPT := $(GOPATH)/bin/gofumpt
-SORTIMPORTS = $(GOPATH)/bin/sortimports
 STATICCHECK := $(GOPATH)/bin/staticcheck
 GOVULNCHECK := $(GOPATH)/bin/govulncheck
 GOSEC := $(GOPATH)/bin/gosec
@@ -11,9 +10,6 @@ help:  ## Print help about available targets
 
 $(GOFUMPT):
 	go install mvdan.cc/gofumpt@v0.4.0
-
-$(SORTIMPORTS):
-	go install github.com/rogpeppe/sortimports@latest
 
 $(STATICCHECK):
 	go install honnef.co/go/tools/cmd/staticcheck@v0.3.3
@@ -33,13 +29,18 @@ lint: $(GOFUMPT) $(STATICCHECK) $(GOVULNCHECK) $(GOSEC)  ## Run linter
 	gosec -quiet -tests ./...
 
 .PHONY: fmt
-fmt: $(SORTIMPORTS) $(GOFUMPT)  ## Reformat code
-	sortimports ./...
+fmt: $(GOFUMPT)  ## Reformat code
 	gofumpt -l -w .
 
 .PHONY: test
 test:  ## Run tests (runs 'go test ./...')
 	go test ./...
+
+.PHONY: test-coverage
+test-coverage:
+	go test -coverprofile /tmp/cover.out ./... && \
+	go tool cover -html=/tmp/cover.out -o /tmp/cover.html && \
+	xdg-open /tmp/cover.html
 
 # This build target may not necessarily be used much depending on our deployment strategy, but is kept here nonetheless as a reference for how to 
 # build while inserting the git commit into the version info
