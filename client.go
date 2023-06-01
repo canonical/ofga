@@ -1,6 +1,6 @@
 // Copyright 2023 Canonical Ltd.
 
-// Package ofga provides utilities for interacting with an OpenFGA instance
+// Package ofga provides utilities for interacting with an OpenFGA instance.
 package ofga
 
 import (

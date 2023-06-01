@@ -8,9 +8,10 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/canonical/ofga"
 	qt "github.com/frankban/quicktest"
 	openfga "github.com/openfga/go-sdk"
+
+	"github.com/canonical/ofga"
 )
 
 func TestNewClient(t *testing.T) {
@@ -55,18 +56,6 @@ func TestNewClient(t *testing.T) {
 		},
 		api:         &MockOpenFgaApi{},
 		expectedErr: "OpenFGA configuration: missing port",
-	}, {
-		about: "client creation fails when AuthModelID is specified without a StoreID",
-		params: ofga.OpenFGAParams{
-			Scheme:      "http",
-			Host:        "localhost",
-			Port:        "8080",
-			Token:       "InsecureTokenDoNotUse",
-			StoreID:     "",
-			AuthModelID: "TestAuthModelID",
-		},
-		api:         &MockOpenFgaApi{},
-		expectedErr: "OpenFGA configuration: AuthModelID specified without a StoreID",
 	}, {
 		about: "client creation fails when AuthModelID is specified without a StoreID",
 		params: ofga.OpenFGAParams{

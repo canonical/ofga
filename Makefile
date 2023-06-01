@@ -1,6 +1,5 @@
 GOPATH := $(shell go env GOPATH)
 GOFUMPT := $(GOPATH)/bin/gofumpt
-SORTIMPORTS = $(GOPATH)/bin/sortimports
 STATICCHECK := $(GOPATH)/bin/staticcheck
 GOVULNCHECK := $(GOPATH)/bin/govulncheck
 GOSEC := $(GOPATH)/bin/gosec
@@ -11,9 +10,6 @@ help:  ## Print help about available targets
 
 $(GOFUMPT):
 	go install mvdan.cc/gofumpt@v0.4.0
-
-$(SORTIMPORTS):
-	go install github.com/rogpeppe/sortimports@latest
 
 $(STATICCHECK):
 	go install honnef.co/go/tools/cmd/staticcheck@v0.3.3
@@ -33,8 +29,7 @@ lint: $(GOFUMPT) $(STATICCHECK) $(GOVULNCHECK) $(GOSEC)  ## Run linter
 	gosec -quiet -tests ./...
 
 .PHONY: fmt
-fmt: $(SORTIMPORTS) $(GOFUMPT)  ## Reformat code
-	sortimports ./...
+fmt: $(GOFUMPT)  ## Reformat code
 	gofumpt -l -w .
 
 .PHONY: test

@@ -5,9 +5,10 @@ package ofga_test
 import (
 	"testing"
 
-	"github.com/canonical/ofga"
 	qt "github.com/frankban/quicktest"
 	openfga "github.com/openfga/go-sdk"
+
+	"github.com/canonical/ofga"
 )
 
 const Editor ofga.Relation = "editor"
