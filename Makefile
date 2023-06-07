@@ -1,5 +1,6 @@
 GOPATH := $(shell go env GOPATH)
 GOFUMPT := $(GOPATH)/bin/gofumpt
+GOIMPORTS = $(GOPATH)/bin/goimports
 STATICCHECK := $(GOPATH)/bin/staticcheck
 GOVULNCHECK := $(GOPATH)/bin/govulncheck
 GOSEC := $(GOPATH)/bin/gosec
@@ -10,6 +11,9 @@ help:  ## Print help about available targets
 
 $(GOFUMPT):
 	go install mvdan.cc/gofumpt@v0.4.0
+
+$(GOIMPORTS):
+	go install golang.org/x/tools/cmd/goimports@latest
 
 $(STATICCHECK):
 	go install honnef.co/go/tools/cmd/staticcheck@v0.3.3
@@ -29,7 +33,8 @@ lint: $(GOFUMPT) $(STATICCHECK) $(GOVULNCHECK) $(GOSEC)  ## Run linter
 	gosec -quiet -tests ./...
 
 .PHONY: fmt
-fmt: $(GOFUMPT)  ## Reformat code
+fmt: $(GOIMPORTS) $(GOFUMPT)  ## Reformat code
+	goimports -local github.com/canonical/ofga -l -w .
 	gofumpt -l -w .
 
 .PHONY: test
