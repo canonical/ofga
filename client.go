@@ -357,7 +357,7 @@ func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize i
 	return tuples, nil
 }
 
-// FindEntitiesWithRelation fetches the list of entities that have a specific
+// FindUsersWithRelation fetches the list of users that have a specific
 // relation with a specific target object.
 //
 // This method not only searches through the relationship tuples present in the
@@ -368,29 +368,27 @@ func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize i
 // This method requires that Tuple.Target and Tuple.Relation be specified.
 //
 // Note that this method call is expensive, and should be used with caution.
-func (c *Client) FindEntitiesWithRelation(ctx context.Context, tuple Tuple) ([]Entity, error) {
-	entityStrings, err := c.findEntitiesWithRelation(ctx, tuple)
+func (c *Client) FindUsersWithRelation(ctx context.Context, tuple Tuple) ([]Entity, error) {
+	userStrings, err := c.findUsersWithRelation(ctx, tuple)
 	if err != nil {
 		return nil, err
 	}
-	var entities []Entity
-	for es := range entityStrings {
-		entity, err := ParseEntity(es)
+	var users []Entity
+	for u := range userStrings {
+		user, err := ParseEntity(u)
 		if err != nil {
-			return nil, fmt.Errorf("cannot parse entity %s from Expand response %q", es, err)
+			return nil, fmt.Errorf("cannot parse entity %s from Expand response %q", u, err)
 		}
-		entities = append(entities, entity)
+		users = append(users, user)
 	}
-	return entities, nil
+	return users, nil
 }
 
-// findEntitiesWithRelation is the internal implementation of
-// FindEntitiesWithRelation.
-//
-// It returns a set of entityStrings representing the list of
-// individual entities that have access to the specified object via the
-// specified relation.
-func (c *Client) findEntitiesWithRelation(ctx context.Context, tuple Tuple) (map[string]bool, error) {
+// findUsersWithRelation is the internal implementation for
+// FindUsersWithRelation. It returns a set of userStrings representing the
+// list of users that have access to the specified object via the specified
+// relation.
+func (c *Client) findUsersWithRelation(ctx context.Context, tuple Tuple) (map[string]bool, error) {
 	if tuple.Target.Kind == "" || tuple.Target.ID == "" {
 		return nil, errors.New("missing tuple.Target")
 	}
@@ -422,7 +420,7 @@ func (c *Client) findEntitiesWithRelation(ctx context.Context, tuple Tuple) (map
 }
 
 // traverseTree will recursively expand the tree returned by an openfga Expand
-// call to find all entities that have the specified relation to the specified
+// call to find all users that have the specified relation to the specified
 // target entity.
 func (c *Client) traverseTree(ctx context.Context, node *openfga.Node) (map[string]bool, error) {
 	logError := func(message, nodeType string, n interface{}) {
@@ -434,56 +432,52 @@ func (c *Client) traverseTree(ctx context.Context, node *openfga.Node) (map[stri
 	// the leaf nodes and return the aggregated results.
 	if node.HasUnion() {
 		union := node.GetUnion()
-		entities := make(map[string]bool)
+		users := make(map[string]bool)
 		for _, childNode := range union.GetNodes() {
-			childNodeEntities, err := c.traverseTree(ctx, &childNode)
+			childNodeUsers, err := c.traverseTree(ctx, &childNode)
 			if err != nil {
 				return nil, err
 			}
-			for l := range childNodeEntities {
-				entities[l] = true
+			for userString := range childNodeUsers {
+				users[userString] = true
 			}
 		}
-		return entities, nil
+		return users, nil
 	}
 	if node.HasLeaf() {
 		leaf := node.GetLeaf()
-		// A leaf node may contain either
-		// - users: these are the entities/entitySets that are directly related
-		//		to the specified object via the specified relation through
-		//		tuples that	are added to the system. Example:
-		// - computed userSets: these are entitySets that are related to the
-		//		specified object via the specified relation through an implied
-		//		relation as defined by the authorization model. Example: All
-		//		writers of a document are viewers of the document.
-		// - tupleToUserSet: these are entitySets that are related to the
-		//		specified object via the specified relation through indirect
-		//		implied relations via other types defined in the authorization
+		// A leaf node may contain either:
+		// - users: these are the users/userSets that have the specified
+		//		relation with the specified object via relationship tuples that
+		//		were added to the system.
+		// - computed userSets: these are the userSets that have the specified
+		//		relation with the specified object via an implied relationship
+		//		defined by the authorization model. Example: All writers of a
+		//		document are viewers of the document.
+		// - tupleToUserSet: these are userSets that have the specified
+		//		relation with the specified object via an indirect implied
+		//		relation through other types defined in the authorization
 		//		model. Example: Any user that is assigned the editor relation
-		//		on a folder is automatically assigned the editor relation to any
-		//		documents that belong to that folder.
+		//		on a folder is automatically assigned the editor relation to
+		//		any documents that belong to that folder.
 		//
 		// If the leaf node contains ComputedSets or TupleToEntitySets, we need
-		// to expand them further.
-		//
-		// Note that openFGA uses the terms "User" & "UserSets" (as can be seen
-		// in their API). But these fields can contain objects of any type,
-		// and so we will use the terms Entity and EntitySets instead.
+		// to expand them further to obtain individual users.
 		if leaf.HasUsers() {
-			entities, err := c.expand(ctx, *leaf.Users.Users...)
+			users, err := c.expand(ctx, *leaf.Users.Users...)
 			if err != nil {
 				return nil, err
 			}
-			return entities, nil
+			return users, nil
 		} else if leaf.HasComputed() {
 			computed := leaf.GetComputed()
 			if computed.HasUserset() {
 				userSet := computed.GetUserset()
-				entities, err := c.expand(ctx, userSet)
+				users, err := c.expand(ctx, userSet)
 				if err != nil {
 					return nil, err
 				}
-				return entities, nil
+				return users, nil
 			} else {
 				logError("missing userSet", "leaf", leaf)
 				return nil, errors.New("missing userSet")
@@ -492,10 +486,10 @@ func (c *Client) traverseTree(ctx context.Context, node *openfga.Node) (map[stri
 			tupleToUserSet := leaf.GetTupleToUserset()
 			if tupleToUserSet.HasComputed() {
 				computedList := tupleToUserSet.GetComputed()
-				entities := make(map[string]bool)
+				users := make(map[string]bool)
 				// We're interested in the list of computed nodes that
 				// this TupleToUserSet contains. We need to expand each of these
-				// to get the leaf entities.
+				// to get the leaf users.
 				for _, computed := range computedList {
 					if computed.HasUserset() {
 						userSet := computed.GetUserset()
@@ -503,15 +497,15 @@ func (c *Client) traverseTree(ctx context.Context, node *openfga.Node) (map[stri
 						if err != nil {
 							return nil, err
 						}
-						for entity := range found {
-							entities[entity] = true
+						for userString := range found {
+							users[userString] = true
 						}
 					} else {
 						logError("tupleToUserSet: missing userSet", "leaf", leaf)
 						return nil, errors.New("missing userSet")
 					}
 				}
-				return entities, nil
+				return users, nil
 			}
 		} else {
 			logError("unknown leaf type", "leaf", leaf)
@@ -522,21 +516,21 @@ func (c *Client) traverseTree(ctx context.Context, node *openfga.Node) (map[stri
 	return nil, errors.New("unknown node type")
 }
 
-// expand checks all entities in the input list and expands any entitySets
-// that are present into individual entities. Example: "team:planning#members"
-// would be expanded into "user:abc", "user:xyz", etc.
-func (c *Client) expand(ctx context.Context, entities ...string) (map[string]bool, error) {
-	eList := make(map[string]bool, len(entities))
-	for _, e := range entities {
-		tokens := strings.Split(e, "#")
+// expand checks all userStrings in the input list and expands any userSets
+// that are present into the constituent individual users. Example:
+// "team:planning#members" would be expanded into "user:abc", "user:xyz", etc.
+func (c *Client) expand(ctx context.Context, userStrings ...string) (map[string]bool, error) {
+	users := make(map[string]bool, len(userStrings))
+	for _, u := range userStrings {
+		tokens := strings.Split(u, "#")
 		switch len(tokens) {
 		case 1:
-			// No '#' is present so this is an individual entity. Add it to the
+			// No '#' is present so this is an individual user. Add it to the
 			// map and continue.
-			eList[e] = true
+			users[u] = true
 		case 2:
-			// We need to expand this entitySet to obtain the individual
-			// entities that it contains.
+			// We need to expand this userSet to obtain the individual
+			// users that it contains.
 			t := openfga.NewTupleKey()
 			t.SetRelation(tokens[1])
 			t.SetObject(tokens[0])
@@ -544,17 +538,17 @@ func (c *Client) expand(ctx context.Context, entities ...string) (map[string]boo
 			if err != nil {
 				return nil, errors.New("failed to parse tuple")
 			}
-			found, err := c.findEntitiesWithRelation(ctx, tuple)
+			found, err := c.findUsersWithRelation(ctx, tuple)
 			if err != nil {
 				return nil, err
 			}
-			for entity := range found {
-				eList[entity] = true
+			for userString := range found {
+				users[userString] = true
 			}
 		default:
-			zapctx.Error(ctx, "unknown entity type", zap.String("entity", e))
-			return nil, errors.New("unknown entity type")
+			zapctx.Error(ctx, fmt.Sprintf("unknown user representation %s", u))
+			return nil, errors.New("unknown user representation")
 		}
 	}
-	return eList, nil
+	return users, nil
 }
