@@ -37,6 +37,7 @@ type OpenFgaApi interface {
 	CreateStore(ctx context.Context) openfga.ApiCreateStoreRequest
 	Expand(ctx context.Context) openfga.ApiExpandRequest
 	GetStore(ctx context.Context) openfga.ApiGetStoreRequest
+	ListObjects(ctx context.Context) openfga.ApiListObjectsRequest
 	ListStores(ctx context.Context) openfga.ApiListStoresRequest
 	Read(ctx context.Context) openfga.ApiReadRequest
 	ReadAuthorizationModel(ctx context.Context, id string) openfga.ApiReadAuthorizationModelRequest
@@ -294,13 +295,13 @@ func (c *Client) GetAuthModel(ctx context.Context, ID string) (openfga.Authoriza
 	return resp.GetAuthorizationModel(), nil
 }
 
-// FindMatchingTuples fetches all stored relationship tuples that match the given
-// input tuple. This method uses the underlying Read API from openFGA. Note that
-// this method only fetches actual tuples that were stored in the system. It
-// does not show any implied relationships (as defined in the authorization
-// model)
+// FindMatchingTuples fetches all stored relationship tuples that match the
+// given input tuple. This method uses the underlying Read API from openFGA.
+// Note that this method only fetches actual tuples that were stored in the
+// system. It does not show any implied relationships (as defined in the
+// authorization model)
 //
-// This method has some constraints on the types of tuples passed in (the
+// This method has some constraints on the tuples passed in (the
 // constraints are from the underlying openfga.Read API):
 //   - Tuple.Target must have the Kind specified. The ID is optional.
 //   - If Tuple.Target.ID is not specified then Tuple.Object is mandatory and
@@ -357,7 +358,7 @@ func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize i
 	return tuples, nil
 }
 
-// FindUsersWithRelation fetches the list of users that have a specific
+// FindUsersByRelation fetches the list of users that have a specific
 // relation with a specific target object.
 //
 // This method not only searches through the relationship tuples present in the
@@ -368,7 +369,7 @@ func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize i
 // This method requires that Tuple.Target and Tuple.Relation be specified.
 //
 // Note that this method call is expensive, and should be used with caution.
-func (c *Client) FindUsersWithRelation(ctx context.Context, tuple Tuple) ([]Entity, error) {
+func (c *Client) FindUsersByRelation(ctx context.Context, tuple Tuple) ([]Entity, error) {
 	userStrings, err := c.findUsersWithRelation(ctx, tuple)
 	if err != nil {
 		return nil, err
@@ -385,7 +386,7 @@ func (c *Client) FindUsersWithRelation(ctx context.Context, tuple Tuple) ([]Enti
 }
 
 // findUsersWithRelation is the internal implementation for
-// FindUsersWithRelation. It returns a set of userStrings representing the
+// FindUsersByRelation. It returns a set of userStrings representing the
 // list of users that have access to the specified object via the specified
 // relation.
 func (c *Client) findUsersWithRelation(ctx context.Context, tuple Tuple) (map[string]bool, error) {
@@ -551,4 +552,61 @@ func (c *Client) expand(ctx context.Context, userStrings ...string) (map[string]
 		}
 	}
 	return users, nil
+}
+
+// FindAccessibleObjectsByRelation returns a list of all objects of a specified
+// type that a user (or any other entity) has access to via the specified
+// relation.
+//
+// This method has some constraints on the tuples passed in (the
+// constraints are from the underlying openfga.ListObjects API):
+//   - The tuple.Object field must have only the Kind and ID fields set.
+//   - The tuple.Relation field must be set.
+//   - The tuple.Target field must specify only the Kind.
+//
+// Note that there are some important caveats to using this method (suboptimal
+// performance depending on the authorization model, experimental, subject to
+// context deadlines, See: https://openfga.dev/docs/interacting/relationship-queries#caveats-and-when-not-to-use-it-3
+func (c *Client) FindAccessibleObjectsByRelation(ctx context.Context, tuple Tuple, contextualTuples ...Tuple) ([]Entity, error) {
+	if tuple.Object.Kind == "" || tuple.Object.ID == "" {
+		return nil, errors.New("missing tuple.Object")
+	}
+	if tuple.Relation == "" {
+		return nil, errors.New("missing tuple.Relation")
+	}
+	if tuple.Target.Kind == "" || tuple.Target.Relation != "" || tuple.Target.ID != "" {
+		return nil, errors.New("invalid tuple.Target, only tuple.Target.Kind must be set")
+	}
+
+	lor := openfga.NewListObjectsRequestWithDefaults()
+	lor.SetAuthorizationModelId(c.AuthModelId)
+	lor.SetUser(tuple.Object.String())
+	lor.SetRelation(tuple.Relation.String())
+	lor.SetType(tuple.Target.Kind.String())
+
+	if len(contextualTuples) > 0 {
+		keys := make([]openfga.TupleKey, len(contextualTuples))
+
+		for i, ct := range contextualTuples {
+			keys[i] = ct.toOpenFGATuple()
+		}
+
+		lor.SetContextualTuples(*openfga.NewContextualTupleKeys(keys))
+	}
+
+	resp, _, err := c.api.ListObjects(ctx).Body(*lor).Execute()
+	if err != nil {
+		return nil, err
+	}
+
+	objects := make([]Entity, len(resp.GetObjects()))
+	for _, o := range resp.GetObjects() {
+		e, err := ParseEntity(o)
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse entity %s from ListObjects response %q", o, err)
+		}
+		objects = append(objects, e)
+	}
+
+	return objects, nil
 }
