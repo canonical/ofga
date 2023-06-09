@@ -131,6 +131,6 @@ func (t Tuple) isEmpty() bool {
 // TimestampedTuple is a tuple accompanied by a timestamp that represents
 // the timestamp at which the tuple was created.
 type TimestampedTuple struct {
-	tuple     Tuple
-	timestamp time.Time
+	Tuple     Tuple
+	Timestamp time.Time
 }

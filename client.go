@@ -271,12 +271,12 @@ func AuthModelFromJson(data []byte) ([]openfga.TypeDefinition, error) {
 	wrapper := make(map[string]interface{})
 	err := json.Unmarshal(data, &wrapper)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cannot unmarshal JSON auth model: %w", err)
 	}
 
 	b, err := json.Marshal(wrapper["type_definitions"])
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cannot marshal JSON type definitions: %w", err)
 	}
 
 	var authModel []openfga.TypeDefinition
@@ -381,8 +381,8 @@ func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize i
 			return nil, fmt.Errorf("cannot parse tuple %+v. %w", oTuple, err)
 		}
 		tuples = append(tuples, TimestampedTuple{
-			tuple:     t,
-			timestamp: *oTuple.Timestamp,
+			Tuple:     t,
+			Timestamp: *oTuple.Timestamp,
 		})
 	}
 	return tuples, nil
@@ -398,7 +398,9 @@ func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize i
 //
 // This method requires that Tuple.Target and Tuple.Relation be specified.
 //
-// Note that this method call is expensive, and should be used with caution.
+// Note that this method call is expensive and has high latency, and should be
+// used with caution. The official docs state that the underlying API method
+// was intended to be used for debugging: https://openfga.dev/docs/interacting/relationship-queries#caveats-and-when-not-to-use-it-2
 func (c *Client) FindUsersByRelation(ctx context.Context, tuple Tuple) ([]Entity, error) {
 	userStrings, err := c.findUsersWithRelation(ctx, tuple)
 	if err != nil {
@@ -476,76 +478,78 @@ func (c *Client) traverseTree(ctx context.Context, node *openfga.Node) (map[stri
 		}
 		return users, nil
 	}
-	if node.HasLeaf() {
-		leaf := node.GetLeaf()
-		// A leaf node may contain either:
-		// - users: these are the users/userSets that have the specified
-		//		relation with the specified object via relationship tuples that
-		//		were added to the system.
-		// - computed userSets: these are the userSets that have the specified
-		//		relation with the specified object via an implied relationship
-		//		defined by the authorization model. Example: All writers of a
-		//		document are viewers of the document.
-		// - tupleToUserSet: these are userSets that have the specified
-		//		relation with the specified object via an indirect implied
-		//		relation through other types defined in the authorization
-		//		model. Example: Any user that is assigned the editor relation
-		//		on a folder is automatically assigned the editor relation to
-		//		any documents that belong to that folder.
-		//
-		// If the leaf node contains ComputedSets or TupleToEntitySets, we need
-		// to expand them further to obtain individual users.
-		if leaf.HasUsers() {
-			users, err := c.expand(ctx, *leaf.Users.Users...)
+
+	if !node.HasLeaf() {
+		logError("unknown node type", "node", node)
+		return nil, errors.New("unknown node type")
+	}
+
+	leaf := node.GetLeaf()
+	// A leaf node may contain either:
+	// - users: these are the users/userSets that have the specified
+	//		relation with the specified object via relationship tuples that
+	//		were added to the system.
+	// - computed userSets: these are the userSets that have the specified
+	//		relation with the specified object via an implied relationship
+	//		defined by the authorization model. Example: All writers of a
+	//		document are viewers of the document.
+	// - tupleToUserSet: these are userSets that have the specified
+	//		relation with the specified object via an indirect implied
+	//		relation through other types defined in the authorization
+	//		model. Example: Any user that is assigned the editor relation
+	//		on a folder is automatically assigned the editor relation to
+	//		any documents that belong to that folder.
+	//
+	// If the leaf node contains computedSets or tupleToUserSets, we need
+	// to expand them further to obtain individual users.
+	if leaf.HasUsers() {
+		users, err := c.expand(ctx, *leaf.Users.Users...)
+		if err != nil {
+			return nil, err
+		}
+		return users, nil
+	}
+
+	if leaf.HasComputed() {
+		return c.expandComputed(ctx, leaf, leaf.GetComputed())
+	}
+
+	if leaf.HasTupleToUserset() {
+		tupleToUserSet := leaf.GetTupleToUserset()
+		if tupleToUserSet.HasComputed() {
+			return c.expandComputed(ctx, leaf, tupleToUserSet.GetComputed()...)
+		}
+	}
+
+	logError("unknown leaf type", "leaf", leaf)
+	return nil, errors.New("unknown leaf type")
+}
+
+// expandComputed is a helper method to expand a computedSet into its
+// constituent users. The leaf parameter of this function is used for
+// logging purposes only.
+func (c *Client) expandComputed(ctx context.Context, leaf openfga.Leaf, computedList ...openfga.Computed) (map[string]bool, error) {
+	logError := func(message, nodeType string, n interface{}) {
+		data, _ := json.Marshal(n)
+		zapctx.Error(ctx, message, zap.String(nodeType, string(data)))
+	}
+	users := make(map[string]bool)
+	for _, computed := range computedList {
+		if computed.HasUserset() {
+			userSet := computed.GetUserset()
+			found, err := c.expand(ctx, userSet)
 			if err != nil {
 				return nil, err
 			}
-			return users, nil
-		} else if leaf.HasComputed() {
-			computed := leaf.GetComputed()
-			if computed.HasUserset() {
-				userSet := computed.GetUserset()
-				users, err := c.expand(ctx, userSet)
-				if err != nil {
-					return nil, err
-				}
-				return users, nil
-			} else {
-				logError("missing userSet", "leaf", leaf)
-				return nil, errors.New("missing userSet")
-			}
-		} else if leaf.HasTupleToUserset() {
-			tupleToUserSet := leaf.GetTupleToUserset()
-			if tupleToUserSet.HasComputed() {
-				computedList := tupleToUserSet.GetComputed()
-				users := make(map[string]bool)
-				// We're interested in the list of computed nodes that
-				// this TupleToUserSet contains. We need to expand each of these
-				// to get the leaf users.
-				for _, computed := range computedList {
-					if computed.HasUserset() {
-						userSet := computed.GetUserset()
-						found, err := c.expand(ctx, userSet)
-						if err != nil {
-							return nil, err
-						}
-						for userString := range found {
-							users[userString] = true
-						}
-					} else {
-						logError("tupleToUserSet: missing userSet", "leaf", leaf)
-						return nil, errors.New("missing userSet")
-					}
-				}
-				return users, nil
+			for userString := range found {
+				users[userString] = true
 			}
 		} else {
-			logError("unknown leaf type", "leaf", leaf)
-			return nil, errors.New("unknown leaf type")
+			logError("missing userSet", "leaf", leaf)
+			return nil, errors.New("missing userSet")
 		}
 	}
-	logError("unknown node type", "node", node)
-	return nil, errors.New("unknown node type")
+	return users, nil
 }
 
 // expand checks all userStrings in the input list and expands any userSets
