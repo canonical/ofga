@@ -465,6 +465,7 @@ func (c *Client) traverseTree(ctx context.Context, node *openfga.Node) (map[stri
 		union := node.GetUnion()
 		users := make(map[string]bool)
 		for _, childNode := range union.GetNodes() {
+			childNode := childNode
 			childNodeUsers, err := c.traverseTree(ctx, &childNode)
 			if err != nil {
 				return nil, err
