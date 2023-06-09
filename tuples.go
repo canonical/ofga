@@ -80,7 +80,7 @@ type Tuple struct {
 	Target   *Entity
 }
 
-// toOpenFGATuple converts our Tuple struct into an OpenFGA TupleKey
+// toOpenFGATuple converts our Tuple struct into an OpenFGA TupleKey.
 func (t Tuple) toOpenFGATuple() openfga.TupleKey {
 	k := openfga.NewTupleKey()
 	// in some cases specifying the object is not required
@@ -95,7 +95,7 @@ func (t Tuple) toOpenFGATuple() openfga.TupleKey {
 	return *k
 }
 
-// fromOpenFGATupleKey converts an openfga.TupleKey struct into a Tuple
+// fromOpenFGATupleKey converts an openfga.TupleKey struct into a Tuple.
 func fromOpenFGATupleKey(key openfga.TupleKey) (Tuple, error) {
 	var user, object Entity
 	var err error

@@ -311,11 +311,13 @@ func (c *Client) GetAuthModel(ctx context.Context, ID string) (openfga.Authoriza
 //
 // This method can be used to find all tuples where:
 //   - a specific user has a specific relation with objects of a specific type
-//     eg: Find all documents where bob is a writer - ("user:bob", "writer", "document:")
+//     eg: Find all documents where bob is a writer -
+//    			("user:bob", "writer", "document:")
 //   - a specific user has any relation with objects of a specific type
 //     eg: Find all documents related to bob - ("user:bob", "", "document:")
 //   - any user has any relation with a specific object
-//     eg: Find all documents related by a writer relation - ("", "", "document:planning")
+//     eg: Find all documents related by a writer relation -
+//    			("", "", "document:planning")
 //
 // This method is also useful during authorization model migrations.
 func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize int32, paginationToken string) ([]TimestampedTuple, error) {
@@ -359,12 +361,12 @@ func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize i
 }
 
 // FindUsersByRelation fetches the list of users that have a specific
-// relation with a specific target object.
-//
-// This method not only searches through the relationship tuples present in the
-// system, but also takes into consideration the authorization model and the
-// relationship tuples implied by the model (for instance, a writer of a
-// document is also a viewer of the document).
+// relation with a specific target object. This method not only searches
+// through the relationship tuples present in the system, but also takes into
+// consideration the authorization model and the relationship tuples implied
+// by the model (for instance, a writer of a document is also a viewer of
+// the document), and recursively expands these relationships to obtain the
+// final list of users.
 //
 // This method requires that Tuple.Target and Tuple.Relation be specified.
 //
@@ -556,7 +558,10 @@ func (c *Client) expand(ctx context.Context, userStrings ...string) (map[string]
 
 // FindAccessibleObjectsByRelation returns a list of all objects of a specified
 // type that a user (or any other entity) has access to via the specified
-// relation.
+// relation. This method checks both actual tuples and implied relations by the
+// authorization model. This method does not recursively expand relations,
+// it will simply check for exact matches between the specified user/entity
+// and the target entity.
 //
 // This method has some constraints on the tuples passed in (the
 // constraints are from the underlying openfga.ListObjects API):
