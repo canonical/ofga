@@ -42,6 +42,7 @@ type OpenFgaApi interface {
 	Read(ctx context.Context) openfga.ApiReadRequest
 	ReadAuthorizationModel(ctx context.Context, id string) openfga.ApiReadAuthorizationModelRequest
 	ReadAuthorizationModels(ctx context.Context) openfga.ApiReadAuthorizationModelsRequest
+	ReadChanges(ctx context.Context) openfga.ApiReadChangesRequest
 	Write(ctx context.Context) openfga.ApiWriteRequest
 	WriteAuthorizationModel(ctx context.Context) openfga.ApiWriteAuthorizationModelRequest
 }
@@ -218,7 +219,9 @@ func (c *Client) CreateStore(ctx context.Context, name string) (string, error) {
 	return resp.GetId(), nil
 }
 
-// ListStores returns the list of stores present on the openFGA instance.
+// ListStores returns the list of stores present on the openFGA instance. If
+// pageSize is set to 0, then the default pageSize is used. If this is the
+// initial request, an empty string can be passed in as the paginationToken.
 func (c *Client) ListStores(ctx context.Context, pageSize int32, paginationToken string) ([]openfga.Store, error) {
 	lsr := c.api.ListStores(ctx)
 
@@ -235,6 +238,31 @@ func (c *Client) ListStores(ctx context.Context, pageSize int32, paginationToken
 		return nil, fmt.Errorf("cannot list stores %q", err)
 	}
 	return resp.GetStores(), nil
+}
+
+// ReadChanges returns a paginated list of tuple changes (additions and
+// deletions) sorted by ascending time. The response will include a continuation
+// token that is used to get the next set of changes. If there are no changes
+// after the provided continuation token, the same token will be returned in
+// order for it to be used when new changes are recorded. If no tuples have been
+// added or removed, this token will be empty. The entityType parameter can be
+// used to restrict the response to show only changes affecting a specific type.
+func (c *Client) ReadChanges(ctx context.Context, entityType string, pageSize int32, paginationToken string) (openfga.ReadChangesResponse, error) {
+	rcr := c.api.ReadChanges(ctx)
+	rcr.Type_(entityType)
+	if pageSize != 0 {
+		rcr = rcr.PageSize(pageSize)
+	}
+	if paginationToken != "" {
+		rcr = rcr.ContinuationToken(paginationToken)
+	}
+
+	resp, _, err := rcr.Execute()
+	if err != nil {
+		zapctx.Error(ctx, fmt.Sprintf("cannot execute ReadChanges request %q", err))
+		return openfga.ReadChangesResponse{}, fmt.Errorf("cannot read changes %q", err)
+	}
+	return resp, nil
 }
 
 // AuthModelFromJson converts the input json representation of an authorization
@@ -312,12 +340,12 @@ func (c *Client) GetAuthModel(ctx context.Context, ID string) (openfga.Authoriza
 // This method can be used to find all tuples where:
 //   - a specific user has a specific relation with objects of a specific type
 //     eg: Find all documents where bob is a writer -
-//    			("user:bob", "writer", "document:")
+//     ("user:bob", "writer", "document:")
 //   - a specific user has any relation with objects of a specific type
 //     eg: Find all documents related to bob - ("user:bob", "", "document:")
 //   - any user has any relation with a specific object
 //     eg: Find all documents related by a writer relation -
-//    			("", "", "document:planning")
+//     ("", "", "document:planning")
 //
 // This method is also useful during authorization model migrations.
 func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize int32, paginationToken string) ([]TimestampedTuple, error) {
