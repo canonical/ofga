@@ -275,6 +275,10 @@ func AuthModelFromJson(data []byte) ([]openfga.TypeDefinition, error) {
 		return nil, fmt.Errorf("cannot unmarshal JSON auth model: %w", err)
 	}
 
+	if _, ok := wrapper["type_definitions"]; !ok {
+		return nil, errors.New(`JSON auth model does not have the "type_definitions" property`)
+	}
+
 	b, err := json.Marshal(wrapper["type_definitions"])
 	if err != nil {
 		return nil, fmt.Errorf("cannot marshal JSON type definitions: %w", err)
@@ -303,9 +307,18 @@ func (c *Client) CreateAuthModel(ctx context.Context, authModel []openfga.TypeDe
 }
 
 // ListAuthModels returns the list of authorization models present on the
-// openFGA instance.
-func (c *Client) ListAuthModels(ctx context.Context) ([]openfga.AuthorizationModel, error) {
-	resp, _, err := c.api.ReadAuthorizationModels(ctx).Execute()
+// openFGA instance. If pageSize is set to 0, then the default pageSize is
+// used. If this is the initial request, an empty string should be passed in
+// as the continuationToken.
+func (c *Client) ListAuthModels(ctx context.Context, pageSize int32, continuationToken string) ([]openfga.AuthorizationModel, error) {
+	rar := c.api.ReadAuthorizationModels(ctx)
+	if pageSize != 0 {
+		rar.PageSize(pageSize)
+	}
+	if continuationToken != "" {
+		rar.ContinuationToken(continuationToken)
+	}
+	resp, _, err := rar.Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot execute ReadAuthorizationModels request %v", err))
 		return nil, fmt.Errorf("cannot list authorization models %v", err)
@@ -451,7 +464,7 @@ func (c *Client) findUsersWithRelation(ctx context.Context, tuple Tuple) (map[st
 
 	tree := res.GetTree()
 	if !tree.HasRoot() {
-		return nil, errors.New("unexpected tree structure from Expand response")
+		return nil, errors.New("tree from Expand response has no root")
 	}
 	root := tree.GetRoot()
 	leaves, err := c.traverseTree(ctx, &root)
