@@ -10,7 +10,9 @@ import (
 	openfga "github.com/openfga/go-sdk"
 )
 
-var EntityRegex = regexp.MustCompile(`([A-za-z0-9_][A-za-z0-9_-]*):([A-za-z0-9_][A-za-z0-9_-]*)(#([A-za-z0-9_][A-za-z0-9_-]*))?`)
+// entityRegex is used to validate that a string represents an Entity/EntitySet
+// and helps to convert from a string representation into an Entity struct.
+var entityRegex = regexp.MustCompile(`([A-za-z0-9_][A-za-z0-9_-]*):([A-za-z0-9_][A-za-z0-9_-]*)(#([A-za-z0-9_][A-za-z0-9_-]*))?`)
 
 // Kind represents the type of the entity in OpenFGA.
 type Kind string
@@ -51,13 +53,17 @@ func (e *Entity) String() string {
 //   - <entityType>:<ID>#<relationship-set>
 //     eg. organization:canonical#members
 func ParseEntity(s string) (Entity, error) {
-	match := EntityRegex.FindStringSubmatch(s)
+	match := entityRegex.FindStringSubmatch(s)
 	switch len(match) {
+	// A length of 3 indicates that the match contains two sub-matches (in
+	// addition to the whole match). This indicates that we have an Entity.
 	case 3:
 		return Entity{
 			Kind: Kind(match[1]),
 			ID:   match[2],
 		}, nil
+	// A length of 5 indicates that the match contains four sub-matches (in
+	// addition to the whole match). This indicates that we have an EntitySet.
 	case 5:
 		return Entity{
 			Kind:     Kind(match[1]),
