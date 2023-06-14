@@ -115,3 +115,157 @@ func TestEntity_String(t *testing.T) {
 		})
 	}
 }
+
+func TestParseEntity(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		about          string
+		entityString   string
+		expectedEntity ofga.Entity
+		expectedErr    string
+	}{{
+		about:        "malformed entity representation raises an error",
+		entityString: "organization#member",
+		expectedErr:  "invalid entity representation.*",
+	}, {
+		about:        "entity without a relation is parsed correctly",
+		entityString: "organization:canonical",
+		expectedEntity: ofga.Entity{
+			Kind: "organization",
+			ID:   "canonical",
+		},
+	}, {
+		about:        "entity with a relation is parsed correctly",
+		entityString: "organization:canonical#member",
+		expectedEntity: ofga.Entity{
+			Kind:     "organization",
+			ID:       "canonical",
+			Relation: "member",
+		},
+	}}
+
+	for _, test := range tests {
+		test := test
+		c.Run(test.about, func(c *qt.C) {
+			c.Parallel()
+
+			entity, err := ofga.ParseEntity(test.entityString)
+
+			if test.expectedErr != "" {
+				c.Assert(err, qt.ErrorMatches, test.expectedErr)
+			} else {
+				c.Assert(err, qt.IsNil)
+				c.Assert(entity, qt.DeepEquals, test.expectedEntity)
+			}
+		})
+	}
+}
+
+func TestFromOpenFGATupleKey(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		about         string
+		tupleKey      openfga.TupleKey
+		expectedTuple ofga.Tuple
+		expectedErr   string
+	}{{
+		about: "tuple with malformed user entity raises error",
+		tupleKey: openfga.TupleKey{
+			User:     openfga.PtrString("user#XYZ"),
+			Relation: openfga.PtrString("member"),
+			Object:   openfga.PtrString("organization:canonical"),
+		},
+		expectedErr: "invalid entity representation.*",
+	}, {
+		about: "tuple with malformed object entity raises error",
+		tupleKey: openfga.TupleKey{
+			User:     openfga.PtrString("user:XYZ"),
+			Relation: openfga.PtrString("member"),
+			Object:   openfga.PtrString("organization"),
+		},
+		expectedErr: "invalid entity representation.*",
+	}, {
+		about: "tuple with all valid fields is converted successfully",
+		tupleKey: openfga.TupleKey{
+			User:     openfga.PtrString("user:XYZ"),
+			Relation: openfga.PtrString("member"),
+			Object:   openfga.PtrString("organization:canonical"),
+		},
+		expectedTuple: ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "XYZ"},
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization", ID: "canonical"},
+		},
+	}}
+
+	for _, test := range tests {
+		test := test
+		c.Run(test.about, func(c *qt.C) {
+			c.Parallel()
+
+			tuple, err := ofga.FromOpenFGATupleKey(test.tupleKey)
+
+			if test.expectedErr != "" {
+				c.Assert(err, qt.ErrorMatches, test.expectedErr)
+			} else {
+				c.Assert(err, qt.IsNil)
+				c.Assert(tuple, qt.DeepEquals, test.expectedTuple)
+			}
+		})
+	}
+}
+
+func TestTuple_IsEmpty(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		about           string
+		tuple           ofga.Tuple
+		expectedIsEmpty bool
+	}{{
+		about: "tuple with an Object is not empty",
+		tuple: ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "XYZ"},
+			Relation: "",
+			Target:   nil,
+		},
+		expectedIsEmpty: false,
+	}, {
+		about: "tuple with a Relation is not empty",
+		tuple: ofga.Tuple{
+			Object:   nil,
+			Relation: "member",
+			Target:   nil,
+		},
+		expectedIsEmpty: false,
+	}, {
+		about: "tuple with a Target is not empty",
+		tuple: ofga.Tuple{
+			Object:   nil,
+			Relation: "",
+			Target:   &ofga.Entity{Kind: "organization", ID: "canonical"},
+		},
+		expectedIsEmpty: false,
+	}, {
+		about: "tuple without an Object, Relation or Target is empty",
+		tuple: ofga.Tuple{
+			Object:   nil,
+			Relation: "",
+			Target:   nil,
+		},
+		expectedIsEmpty: true,
+	}}
+
+	for _, test := range tests {
+		test := test
+		c.Run(test.about, func(c *qt.C) {
+			c.Parallel()
+
+			isEmpty := ofga.TupleIsEmpty(&test.tuple)
+
+			c.Assert(isEmpty, qt.Equals, test.expectedIsEmpty)
+		})
+	}
+}

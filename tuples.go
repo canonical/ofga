@@ -51,28 +51,19 @@ func (e *Entity) String() string {
 //   - <entityType>:<ID>
 //     eg. organization:canonical
 //   - <entityType>:<ID>#<relationship-set>
-//     eg. organization:canonical#members
+//     eg. organization:canonical#member
 func ParseEntity(s string) (Entity, error) {
 	match := entityRegex.FindStringSubmatch(s)
-	switch len(match) {
-	// A length of 3 indicates that the match contains two sub-matches (in
-	// addition to the whole match). This indicates that we have an Entity.
-	case 3:
-		return Entity{
-			Kind: Kind(match[1]),
-			ID:   match[2],
-		}, nil
-	// A length of 5 indicates that the match contains four sub-matches (in
-	// addition to the whole match). This indicates that we have an EntitySet.
-	case 5:
-		return Entity{
-			Kind:     Kind(match[1]),
-			ID:       match[2],
-			Relation: Relation(match[4]),
-		}, nil
-	default:
+	if match == nil {
 		return Entity{}, fmt.Errorf("invalid entity representation: %s", s)
 	}
+
+	// Extract and return the relevant information from the sub-matches.
+	return Entity{
+		Kind:     Kind(match[1]),
+		ID:       match[2],
+		Relation: Relation(match[4]),
+	}, nil
 }
 
 // Tuple represents a relation between an object and a target. Note that OpenFGA
