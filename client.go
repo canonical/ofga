@@ -8,8 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 
 	"github.com/juju/zaputil/zapctx"
@@ -60,11 +58,6 @@ type Client struct {
 // NewClient returns a wrapped OpenFGA API client ensuring all calls are made
 // to the provided authorisation model (id) and returns what is necessary.
 func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
-	return newClient(ctx, p, nil)
-}
-
-// newClient allows passing in a mock api object for testing.
-func newClient(ctx context.Context, p OpenFGAParams, api OpenFgaApi) (*Client, error) {
 	if p.Host == "" {
 		return nil, errors.New("OpenFGA configuration: missing host")
 	}
@@ -96,26 +89,15 @@ func newClient(ctx context.Context, p OpenFGAParams, api OpenFgaApi) (*Client, e
 	}
 	configuration, err := openfga.NewConfiguration(config)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("OpenFGA configuration: %v", err)
 	}
-	if api == nil {
-		client := openfga.NewAPIClient(configuration)
-		api = client.OpenFgaApi
-	}
-	_, response, err := api.ListStores(ctx).Execute()
+	client := openfga.NewAPIClient(configuration)
+	api := client.OpenFgaApi
+
+	_, _, err = api.ListStores(ctx).Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot list stores %v", err))
 		return nil, fmt.Errorf("cannot list stores %v", err)
-	}
-	if response.StatusCode != http.StatusOK {
-		// The response body is only used as extra information in the error
-		// message, so if an error occurred while trying to read the response
-		// body, we can just ignore it.
-		var body []byte
-		if response.Body != nil {
-			body, _ = io.ReadAll(response.Body)
-		}
-		return nil, fmt.Errorf("failed to contact the OpenFga server: received %v: %s", response.StatusCode, string(body))
 	}
 
 	// If StoreID is present, validate that such a store exists.
@@ -159,7 +141,7 @@ func (c *Client) AddRelation(ctx context.Context, tuples ...Tuple) error {
 	_, _, err := c.api.Write(ctx).Body(*wr).Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot execute Write request %v", err))
-		return err
+		return fmt.Errorf("cannot add relation %v", err)
 	}
 	return nil
 }
@@ -180,7 +162,7 @@ func (c *Client) CheckRelation(ctx context.Context, tuple Tuple) (bool, error) {
 	checkResp, httpResp, err := c.api.Check(ctx).Body(*cr).Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot execute Check request %v", err))
-		return false, err
+		return false, fmt.Errorf("cannot check relation %v", err)
 	}
 	allowed := checkResp.GetAllowed()
 	zapctx.Debug(ctx, "check request internal resp code", zap.Int("code", httpResp.StatusCode), zap.Bool("allowed", allowed))
@@ -203,7 +185,7 @@ func (c *Client) RemoveRelation(ctx context.Context, tuples ...Tuple) error {
 	_, _, err := c.api.Write(ctx).Body(*wr).Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot execute Write request %v", err))
-		return err
+		return fmt.Errorf("cannot remove relation %v", err)
 	}
 	return nil
 }
@@ -214,7 +196,7 @@ func (c *Client) CreateStore(ctx context.Context, name string) (string, error) {
 	resp, _, err := c.api.CreateStore(ctx).Body(*csr).Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot execute CreateStore request %v", err))
-		return "", fmt.Errorf("cannot list stores %v", err)
+		return "", fmt.Errorf("cannot create store %v", err)
 	}
 	return resp.GetId(), nil
 }
@@ -272,7 +254,7 @@ func (c *Client) ReadChanges(ctx context.Context, entityType string, pageSize in
 func AuthModelFromJson(data []byte) ([]openfga.TypeDefinition, error) {
 	wrapper := make(map[string]interface{})
 	if err := json.Unmarshal(data, &wrapper); err != nil {
-		return nil, fmt.Errorf("cannot unmarshal JSON auth model: %w", err)
+		return nil, fmt.Errorf("cannot unmarshal JSON auth model: %s", err)
 	}
 
 	if _, ok := wrapper["type_definitions"]; !ok {
@@ -281,12 +263,12 @@ func AuthModelFromJson(data []byte) ([]openfga.TypeDefinition, error) {
 
 	b, err := json.Marshal(wrapper["type_definitions"])
 	if err != nil {
-		return nil, fmt.Errorf("cannot marshal JSON type definitions: %w", err)
+		return nil, fmt.Errorf("cannot marshal JSON type definitions: %s", err)
 	}
 
 	var authModel []openfga.TypeDefinition
 	if err = json.Unmarshal(b, &authModel); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cannot unmarshal JSON auth model: %s", err)
 	}
 
 	return authModel, nil
@@ -301,7 +283,7 @@ func (c *Client) CreateAuthModel(ctx context.Context, authModel []openfga.TypeDe
 	resp, _, err := c.api.WriteAuthorizationModel(ctx).Body(*ar).Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot execute WriteAuthorizationModel request %v", err))
-		return "", err
+		return "", fmt.Errorf("cannot create auth model %v", err)
 	}
 	return resp.GetAuthorizationModelId(), nil
 }

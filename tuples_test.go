@@ -11,18 +11,50 @@ import (
 	"github.com/canonical/ofga"
 )
 
-const Editor ofga.Relation = "editor"
+const relationEditor ofga.Relation = "editor"
+
+var (
+	entityTestUser     = ofga.Entity{Kind: "user", ID: "123"}
+	entityTestContract = ofga.Entity{Kind: "contract", ID: "789"}
+	authModelJson      = []byte("{\n  \"type_definitions\": [\n    {\n      \"type\": \"user\",\n      \"relations\": {},\n      \"metadata\": null\n    },\n    {\n      \"type\": \"document\",\n      \"relations\": {\n        \"viewer\": {\n          \"union\": {\n            \"child\": [\n              {\n                \"this\": {}\n              },\n              {\n                \"computedUserset\": {\n                  \"object\": \"\",\n                  \"relation\": \"writer\"\n                }\n              }\n            ]\n          }\n        },\n        \"writer\": {\n          \"this\": {}\n        }\n      },\n      \"metadata\": {\n        \"relations\": {\n          \"viewer\": {\n            \"directly_related_user_types\": [\n              {\n                \"type\": \"user\"\n              }\n            ]\n          },\n          \"writer\": {\n            \"directly_related_user_types\": [\n              {\n                \"type\": \"user\"\n              }\n            ]\n          }\n        }\n      }\n    }\n  ],\n  \"schema_version\": \"1.1\"\n}")
+	authModel          = []openfga.TypeDefinition{
+		{Type: "user", Relations: &map[string]openfga.Userset{}},
+		{
+			Type: "document",
+			Relations: &map[string]openfga.Userset{
+				"writer": {
+					This: &map[string]interface{}{},
+				},
+				"viewer": {Union: &openfga.Usersets{
+					Child: &[]openfga.Userset{
+						{This: &map[string]interface{}{}},
+						{ComputedUserset: &openfga.ObjectRelation{
+							Object:   openfga.PtrString(""),
+							Relation: openfga.PtrString("writer"),
+						}},
+					},
+				}},
+			},
+			Metadata: &openfga.Metadata{
+				Relations: &map[string]openfga.RelationMetadata{
+					"writer": {
+						DirectlyRelatedUserTypes: &[]openfga.RelationReference{
+							{Type: "user"},
+						},
+					},
+					"viewer": {
+						DirectlyRelatedUserTypes: &[]openfga.RelationReference{
+							{Type: "user"},
+						},
+					},
+				},
+			},
+		},
+	}
+)
 
 func TestToOpenFGATuple(t *testing.T) {
 	c := qt.New(t)
-	user := ofga.Entity{
-		Kind: "user",
-		ID:   "123",
-	}
-	contract := ofga.Entity{
-		Kind: "contract",
-		ID:   "789",
-	}
 
 	tests := []struct {
 		about                   string
@@ -31,42 +63,42 @@ func TestToOpenFGATuple(t *testing.T) {
 	}{{
 		about: "tuple with object, relation and target is converted successfully",
 		tuple: ofga.Tuple{
-			Object:   &user,
-			Relation: Editor,
-			Target:   &contract,
+			Object:   &entityTestUser,
+			Relation: relationEditor,
+			Target:   &entityTestContract,
 		},
 		expectedOpenFGATupleKey: openfga.TupleKey{
-			User:     openfga.PtrString(user.String()),
-			Relation: openfga.PtrString(Editor.String()),
-			Object:   openfga.PtrString(contract.String()),
+			User:     openfga.PtrString(entityTestUser.String()),
+			Relation: openfga.PtrString(relationEditor.String()),
+			Object:   openfga.PtrString(entityTestContract.String()),
 		},
 	}, {
 		about: "tuple with relation and target is converted successfully",
 		tuple: ofga.Tuple{
-			Relation: Editor,
-			Target:   &contract,
+			Relation: relationEditor,
+			Target:   &entityTestContract,
 		},
 		expectedOpenFGATupleKey: openfga.TupleKey{
-			Relation: openfga.PtrString(Editor.String()),
-			Object:   openfga.PtrString(contract.String()),
+			Relation: openfga.PtrString(relationEditor.String()),
+			Object:   openfga.PtrString(entityTestContract.String()),
 		},
 	}, {
 		about: "tuple with object and target is converted successfully",
 		tuple: ofga.Tuple{
-			Object: &user,
-			Target: &contract,
+			Object: &entityTestUser,
+			Target: &entityTestContract,
 		},
 		expectedOpenFGATupleKey: openfga.TupleKey{
-			User:   openfga.PtrString(user.String()),
-			Object: openfga.PtrString(contract.String()),
+			User:   openfga.PtrString(entityTestUser.String()),
+			Object: openfga.PtrString(entityTestContract.String()),
 		},
 	}, {
 		about: "tuple with only target is converted successfully",
 		tuple: ofga.Tuple{
-			Target: &contract,
+			Target: &entityTestContract,
 		},
 		expectedOpenFGATupleKey: openfga.TupleKey{
-			Object: openfga.PtrString(contract.String()),
+			Object: openfga.PtrString(entityTestContract.String()),
 		},
 	}}
 
