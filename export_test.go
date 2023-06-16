@@ -4,5 +4,7 @@ package ofga
 
 var (
 	ToOpenFGATuple          = (*Tuple).toOpenFGATuple
+	TupleIsEmpty            = (*Tuple).isEmpty
+	FromOpenFGATupleKey     = fromOpenFGATupleKey
 	NewClientInternalExport = newClient
 )

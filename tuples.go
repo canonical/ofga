@@ -3,8 +3,16 @@
 package ofga
 
 import (
+	"fmt"
+	"regexp"
+	"time"
+
 	openfga "github.com/openfga/go-sdk"
 )
+
+// entityRegex is used to validate that a string represents an Entity/EntitySet
+// and helps to convert from a string representation into an Entity struct.
+var entityRegex = regexp.MustCompile(`([A-za-z0-9_][A-za-z0-9_-]*):([A-za-z0-9_][A-za-z0-9_-]*)(#([A-za-z0-9_][A-za-z0-9_-]*))?`)
 
 // Kind represents the type of the entity in OpenFGA.
 type Kind string
@@ -38,6 +46,26 @@ func (e *Entity) String() string {
 	return e.Kind.String() + ":" + e.ID + "#" + e.Relation.String()
 }
 
+// ParseEntity will parse a string representation into an Entity. It expects to
+// find entities of the form:
+//   - <entityType>:<ID>
+//     eg. organization:canonical
+//   - <entityType>:<ID>#<relationship-set>
+//     eg. organization:canonical#member
+func ParseEntity(s string) (Entity, error) {
+	match := entityRegex.FindStringSubmatch(s)
+	if match == nil {
+		return Entity{}, fmt.Errorf("invalid entity representation: %s", s)
+	}
+
+	// Extract and return the relevant information from the sub-matches.
+	return Entity{
+		Kind:     Kind(match[1]),
+		ID:       match[2],
+		Relation: Relation(match[4]),
+	}, nil
+}
+
 // Tuple represents a relation between an object and a target. Note that OpenFGA
 // represents a Tuple as (User, Relation, Object). However, the `User` field is
 // not restricted to just being users, it could also refer to objects when we
@@ -49,7 +77,7 @@ type Tuple struct {
 	Target   *Entity
 }
 
-// toOpenFGATuple converts our Tuple struct into an OpenFGA TupleKey
+// toOpenFGATuple converts our Tuple struct into an OpenFGA TupleKey.
 func (t Tuple) toOpenFGATuple() openfga.TupleKey {
 	k := openfga.NewTupleKey()
 	// in some cases specifying the object is not required
@@ -62,4 +90,44 @@ func (t Tuple) toOpenFGATuple() openfga.TupleKey {
 	}
 	k.SetObject(t.Target.String())
 	return *k
+}
+
+// fromOpenFGATupleKey converts an openfga.TupleKey struct into a Tuple.
+func fromOpenFGATupleKey(key openfga.TupleKey) (Tuple, error) {
+	var user, object Entity
+	var err error
+	if key.HasUser() {
+		user, err = ParseEntity(key.GetUser())
+		if err != nil {
+			return Tuple{}, err
+		}
+	}
+	if key.HasObject() {
+		object, err = ParseEntity(key.GetObject())
+		if err != nil {
+			return Tuple{}, err
+		}
+	}
+
+	return Tuple{
+		Object:   &user,
+		Relation: Relation(key.GetRelation()),
+		Target:   &object,
+	}, nil
+}
+
+// isEmpty is a helper method to check whether a tuple is set to a non-empty
+// value or not.
+func (t Tuple) isEmpty() bool {
+	if t.Object == nil && t.Relation == "" && t.Target == nil {
+		return true
+	}
+	return false
+}
+
+// TimestampedTuple is a tuple accompanied by a timestamp that represents
+// the timestamp at which the tuple was created.
+type TimestampedTuple struct {
+	Tuple     Tuple
+	Timestamp time.Time
 }
