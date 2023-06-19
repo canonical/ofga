@@ -328,7 +328,7 @@ func validateTupleForFindMatchingTuples(tuple Tuple) error {
 		return errors.New("either tuple.Target.ID or tuple.Object must be specified")
 	}
 	if tuple.Target.Relation != "" {
-		return errors.New("invalid tuple.Target, tuple.Target.Relation must not be set")
+		return errors.New("tuple.Target.Relation must not be set")
 	}
 	return nil
 }
@@ -358,11 +358,11 @@ func validateTupleForFindMatchingTuples(tuple Tuple) error {
 //     ("", "", "document:planning")
 //
 // This method is also useful during authorization model migrations.
-func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize int32, continuationToken string) ([]TimestampedTuple, error) {
+func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize int32, continuationToken string) ([]TimestampedTuple, string, error) {
 	rr := openfga.NewReadRequest()
 	if !tuple.isEmpty() {
 		if err := validateTupleForFindMatchingTuples(tuple); err != nil {
-			return nil, err
+			return nil, "", fmt.Errorf("invalid tuple for FindMatchingTuples, %s", err)
 		}
 		rr.SetTupleKey(tuple.toOpenFGATuple())
 	}
@@ -375,21 +375,21 @@ func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize i
 	resp, _, err := c.api.Read(ctx).Body(*rr).Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot execute Read request %v", err))
-		return nil, err
+		return nil, "", fmt.Errorf("cannot fetch matching tuples, %s", err)
 	}
-	tuples := make([]TimestampedTuple, len(resp.GetTuples()))
+	tuples := make([]TimestampedTuple, 0, len(resp.GetTuples()))
 	for _, oTuple := range resp.GetTuples() {
 		t, err := fromOpenFGATupleKey(*oTuple.Key)
 		if err != nil {
 			zapctx.Error(ctx, fmt.Sprintf("cannot parse tuple from Read response %v", err))
-			return nil, fmt.Errorf("cannot parse tuple %+v. %w", oTuple, err)
+			return nil, "", fmt.Errorf("cannot parse tuple %+v. %w", oTuple, err)
 		}
 		tuples = append(tuples, TimestampedTuple{
 			Tuple:     t,
 			Timestamp: *oTuple.Timestamp,
 		})
 	}
-	return tuples, nil
+	return tuples, resp.GetContinuationToken(), nil
 }
 
 // FindUsersByRelation fetches the list of users that have a specific
@@ -421,27 +421,36 @@ func (c *Client) FindUsersByRelation(ctx context.Context, tuple Tuple) ([]Entity
 	return users, nil
 }
 
+// validateTupleForFindUsersByRelation validates that the input tuples to the
+// FindMatchingTuples method complies with the API requirements.
+func validateTupleForFindUsersByRelation(tuple Tuple) error {
+	if tuple.Target.Kind == "" || tuple.Target.ID == "" {
+		return errors.New("missing tuple.Target")
+	}
+	if tuple.Target.Relation != "" {
+		return errors.New("tuple.Target.Relation must not be set")
+	}
+	if tuple.Relation == "" {
+		return errors.New("missing tuple.Relation")
+	}
+	return nil
+}
+
 // findUsersWithRelation is the internal implementation for
 // FindUsersByRelation. It returns a set of userStrings representing the
 // list of users that have access to the specified object via the specified
 // relation.
 func (c *Client) findUsersWithRelation(ctx context.Context, tuple Tuple) (map[string]bool, error) {
-	if tuple.Target.Kind == "" || tuple.Target.ID == "" {
-		return nil, errors.New("missing tuple.Target")
-	}
-	if tuple.Target.Relation != "" {
-		return nil, errors.New("invalid tuple.Target, tuple.Target.Relation must not be set")
-	}
-	if tuple.Relation == "" {
-		return nil, errors.New("missing tuple.Relation")
+	if err := validateTupleForFindUsersByRelation(tuple); err != nil {
+		return nil, fmt.Errorf("invalid tuple for FindUsersWithRelation, %s", err)
 	}
 
 	er := openfga.NewExpandRequest(tuple.toOpenFGATuple())
 	er.SetAuthorizationModelId(c.AuthModelId)
 	res, _, err := c.api.Expand(ctx).Body(*er).Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute Expand request %v", err))
-		return nil, err
+		zapctx.Error(ctx, fmt.Sprintf("cannot execute Expand request %s", err))
+		return nil, fmt.Errorf("cannot execute Expand request %s", err)
 	}
 
 	tree := res.GetTree()
@@ -451,7 +460,7 @@ func (c *Client) findUsersWithRelation(ctx context.Context, tuple Tuple) (map[st
 	root := tree.GetRoot()
 	leaves, err := c.traverseTree(ctx, &root)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cannot expand the intermediate results, %s", err)
 	}
 	return leaves, nil
 }
@@ -576,11 +585,11 @@ func (c *Client) expand(ctx context.Context, userStrings ...string) (map[string]
 			t.SetObject(tokens[0])
 			tuple, err := fromOpenFGATupleKey(*t)
 			if err != nil {
-				return nil, errors.New("failed to parse tuple")
+				return nil, fmt.Errorf("failed to parse tuple %s, %s", u, err)
 			}
 			found, err := c.findUsersWithRelation(ctx, tuple)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("failed to expand %s, %s", u, err)
 			}
 			for userString := range found {
 				users[userString] = true

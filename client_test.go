@@ -121,7 +121,7 @@ var (
 	GetStore       = Route{method: http.MethodGet, endpoint: `=~/stores/(\w+)\z`}
 	ListObjects    = Route{method: http.MethodPost, endpoint: `=~/stores/(\w+)/list-objects\z`}
 	ListStore      = Route{method: http.MethodGet, endpoint: "/stores"}
-	Read           = Route{method: http.MethodGet, endpoint: `=~/stores/(\w+)/read\z`}
+	Read           = Route{method: http.MethodPost, endpoint: `=~/stores/(\w+)/read\z`}
 	ReadAuthModel  = Route{method: http.MethodGet, endpoint: `=~/stores/(\w+)/authorization-models/(\w+)\z`}
 	ReadAuthModels = Route{method: http.MethodGet, endpoint: `=~/stores/(\w+)/authorization-models\z`}
 	ReadChanges    = Route{method: http.MethodGet, endpoint: `=~/stores/(\w+)/changes\z`}
@@ -956,6 +956,573 @@ func TestClient_GetAuthModel(t *testing.T) {
 			} else {
 				c.Assert(err, qt.IsNil)
 				c.Assert(model, qt.DeepEquals, test.expectedAuthModel)
+			}
+
+			// Validate that the mock routes were called as expected.
+			for _, mr := range test.mockRoutes {
+				mr.finish(c)
+			}
+		})
+	}
+}
+
+func TestValidateTupleForFindMatchingTuples(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		about       string
+		tuple       ofga.Tuple
+		expectedErr string
+	}{{
+		about: "error when Target does not specify Kind",
+		tuple: ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "XYZ"},
+			Relation: "member",
+			Target:   &ofga.Entity{ID: "123"},
+		},
+		expectedErr: "missing tuple.Target.Kind",
+	}, {
+		about: "error when Target ID is missing and Object is not fully specified",
+		tuple: ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user"},
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization"},
+		},
+		expectedErr: "either tuple.Target.ID or tuple.Object must be specified",
+	}, {
+		about: "error when Target Relation is specified",
+		tuple: ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "XYZ"},
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization", ID: "123", Relation: "admin"},
+		},
+		expectedErr: "tuple.Target.Relation must not be set",
+	}, {
+		about: "no error when tuple is specified in correct format",
+		tuple: ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "XYZ"},
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
+		},
+	}}
+
+	for _, test := range tests {
+		test := test
+		c.Run(test.about, func(c *qt.C) {
+			// Execute the test
+			err := ofga.ValidateTupleForFindMatchingTuples(test.tuple)
+
+			if test.expectedErr != "" {
+				c.Assert(err, qt.ErrorMatches, test.expectedErr)
+			} else {
+				c.Assert(err, qt.IsNil)
+			}
+		})
+	}
+}
+
+func TestClient_FindMatchingTuples(t *testing.T) {
+	c := qt.New(t)
+
+	ctx := context.Background()
+	client := getTestClient(c)
+
+	now := time.Now()
+	future := now.AddDate(0, 0, 1)
+
+	readTuples := []openfga.Tuple{{
+		Key:       &openfga.TupleKey{User: openfga.PtrString("user:abc"), Relation: openfga.PtrString("member"), Object: openfga.PtrString("organization:123")},
+		Timestamp: &now,
+	}, {
+		Key:       &openfga.TupleKey{User: openfga.PtrString("user:xyz"), Relation: openfga.PtrString("member"), Object: openfga.PtrString("organization:123")},
+		Timestamp: &future,
+	}}
+
+	readConvertedTuples := []ofga.TimestampedTuple{{
+		Tuple: ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "abc"},
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
+		},
+		Timestamp: now,
+	}, {
+		Tuple: ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "xyz"},
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
+		},
+		Timestamp: future,
+	}}
+
+	tests := []struct {
+		about                     string
+		tuple                     ofga.Tuple
+		pageSize                  int32
+		continuationToken         string
+		mockRoutes                []*RouteResponder
+		expectedTuples            []ofga.TimestampedTuple
+		expectedContinuationToken string
+		expectedErr               string
+	}{{
+		about: "passing in an invalid tuple for the Read API returns an error",
+		tuple: ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "XYZ"},
+			Relation: "member",
+			Target:   &ofga.Entity{ID: "123"},
+		},
+		expectedErr: "invalid tuple for FindMatchingTuples.*",
+	}, {
+		about: "error raised by the underlying client is returned to the caller",
+		mockRoutes: []*RouteResponder{{
+			route:              Read,
+			mockResponseStatus: http.StatusInternalServerError,
+		}},
+		expectedErr: "cannot fetch matching tuples.*",
+	}, {
+		about: "an error converting a response tuple is raised to the caller",
+		tuple: ofga.Tuple{},
+		mockRoutes: []*RouteResponder{{
+			route:           Read,
+			expectedRequest: openfga.ReadRequest{},
+			mockResponse: openfga.ReadResponse{
+				Tuples: &[]openfga.Tuple{{
+					Key:       &openfga.TupleKey{User: openfga.PtrString("userabc"), Relation: openfga.PtrString("member"), Object: openfga.PtrString("organization:123")},
+					Timestamp: &now,
+				}},
+			},
+		}},
+		expectedErr: "cannot parse tuple.*",
+	}, {
+		about: "passing in an empty tuple returns all tuples in the system",
+		tuple: ofga.Tuple{},
+		mockRoutes: []*RouteResponder{{
+			route:           Read,
+			expectedRequest: openfga.ReadRequest{},
+			mockResponse: openfga.ReadResponse{
+				Tuples:            &readTuples,
+				ContinuationToken: openfga.PtrString("SimulatedToken"),
+			},
+		}},
+		expectedTuples:            readConvertedTuples,
+		expectedContinuationToken: "SimulatedToken",
+	}, {
+		about: "passing in a valid tuple for the Read API returns matching tuples in the system",
+		tuple: ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "XYZ"},
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
+		},
+		continuationToken: "SimulatedToken",
+		pageSize:          50,
+		mockRoutes: []*RouteResponder{{
+			route: Read,
+			expectedRequest: openfga.ReadRequest{
+				TupleKey:          &openfga.TupleKey{User: openfga.PtrString("user:XYZ"), Relation: openfga.PtrString("member"), Object: openfga.PtrString("organization:123")},
+				PageSize:          openfga.PtrInt32(50),
+				ContinuationToken: openfga.PtrString("SimulatedToken"),
+			},
+			mockResponse: openfga.ReadResponse{
+				Tuples: &readTuples,
+			},
+		}},
+		expectedTuples: readConvertedTuples,
+	}}
+
+	for _, test := range tests {
+		test := test
+		c.Run(test.about, func(c *qt.C) {
+			// Set up and configure mock http responders.
+			httpmock.Activate()
+			defer httpmock.DeactivateAndReset()
+			for _, mr := range test.mockRoutes {
+				httpmock.RegisterResponder(mr.route.method, mr.route.endpoint, mr.generate())
+			}
+
+			// Execute the test
+			tuples, cToken, err := client.FindMatchingTuples(ctx, test.tuple, test.pageSize, test.continuationToken)
+
+			if test.expectedErr != "" {
+				c.Assert(err, qt.ErrorMatches, test.expectedErr)
+				c.Assert(tuples, qt.IsNil)
+				c.Assert(cToken, qt.Equals, "")
+			} else {
+				c.Assert(err, qt.IsNil)
+				c.Assert(tuples, qt.DeepEquals, test.expectedTuples)
+				c.Assert(cToken, qt.Equals, test.expectedContinuationToken)
+			}
+
+			// Validate that the mock routes were called as expected.
+			for _, mr := range test.mockRoutes {
+				mr.finish(c)
+			}
+		})
+	}
+}
+
+func TestValidateTupleForFindUsersByRelation(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		about       string
+		tuple       ofga.Tuple
+		expectedErr string
+	}{{
+		about: "error when Target does not specify Kind",
+		tuple: ofga.Tuple{
+			Relation: "member",
+			Target:   &ofga.Entity{ID: "123"},
+		},
+		expectedErr: "missing tuple.Target",
+	}, {
+		about: "error when Target does not specify ID",
+		tuple: ofga.Tuple{
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization"},
+		},
+		expectedErr: "missing tuple.Target",
+	}, {
+		about: "error when Target specifies a relation",
+		tuple: ofga.Tuple{
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization", ID: "123", Relation: "admins"},
+		},
+		expectedErr: "tuple.Target.Relation must not be set",
+	}, {
+		about: "error when tuple.Relation is not specified",
+		tuple: ofga.Tuple{
+			Relation: "",
+			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
+		},
+		expectedErr: "missing tuple.Relation",
+	}, {
+		about: "no error when tuple is specified correctly",
+		tuple: ofga.Tuple{
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
+		},
+	}}
+
+	for _, test := range tests {
+		test := test
+		c.Run(test.about, func(c *qt.C) {
+			// Execute the test
+			err := ofga.ValidateTupleForFindUsersByRelation(test.tuple)
+
+			if test.expectedErr != "" {
+				c.Assert(err, qt.ErrorMatches, test.expectedErr)
+			} else {
+				c.Assert(err, qt.IsNil)
+			}
+		})
+	}
+}
+
+func TestClient_FindUsersByRelation(t *testing.T) {
+	c := qt.New(t)
+
+	ctx := context.Background()
+	client := getTestClient(c)
+
+	tests := []struct {
+		about         string
+		tuple         ofga.Tuple
+		mockRoutes    []*RouteResponder
+		expectedUsers []ofga.Entity
+		expectedErr   string
+	}{{
+		about: "passing in an invalid tuple for the Expand API returns an error",
+		tuple: ofga.Tuple{
+			Relation: "",
+			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
+		},
+		expectedErr: "invalid tuple for FindUsersWithRelation.*",
+	}, {
+		about: "error raised by the underlying client is returned to the caller",
+		tuple: ofga.Tuple{
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
+		},
+		mockRoutes: []*RouteResponder{{
+			route:              Expand,
+			mockResponseStatus: http.StatusInternalServerError,
+		}},
+		expectedErr: "cannot execute Expand request.*",
+	}, {
+		about: "error due to an invalid tree structure being returned is propagated forward",
+		tuple: ofga.Tuple{
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
+		},
+		mockRoutes: []*RouteResponder{{
+			route:        Expand,
+			mockResponse: openfga.ExpandResponse{Tree: &openfga.UsersetTree{Root: nil}},
+		}},
+		expectedErr: "tree from Expand response has no root",
+	}, {
+		about: "error expanding intermediate results is propagated forward",
+		tuple: ofga.Tuple{
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
+		},
+		mockRoutes: []*RouteResponder{{
+			route: Expand,
+			mockResponse: openfga.ExpandResponse{
+				Tree: &openfga.UsersetTree{
+					Root: &openfga.Node{},
+				},
+			},
+		}},
+		expectedErr: "cannot expand the intermediate results.*",
+	}, {
+		about: "error when parsing an incorrectly formatted user entity is raised",
+		tuple: ofga.Tuple{
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
+		},
+		mockRoutes: []*RouteResponder{{
+			route: Expand,
+			mockResponse: openfga.ExpandResponse{
+				Tree: &openfga.UsersetTree{
+					Root: &openfga.Node{
+						Leaf: &openfga.Leaf{
+							Users: &openfga.Users{Users: &[]string{"userXYZ"}},
+						},
+					},
+				},
+			},
+		}},
+		expectedErr: "cannot parse entity .* from Expand response.*",
+	}, {
+		about: "found users are returned successfully",
+		tuple: ofga.Tuple{
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
+		},
+		mockRoutes: []*RouteResponder{{
+			route: Expand,
+			mockResponse: openfga.ExpandResponse{
+				Tree: &openfga.UsersetTree{
+					Root: &openfga.Node{
+						Leaf: &openfga.Leaf{
+							Users: &openfga.Users{Users: &[]string{"user:XYZ", "user:ABC"}},
+						},
+					},
+				},
+			},
+		}},
+		expectedUsers: []ofga.Entity{
+			{Kind: "user", ID: "XYZ"},
+			{Kind: "user", ID: "ABC"},
+		},
+	}}
+
+	for _, test := range tests {
+		test := test
+		c.Run(test.about, func(c *qt.C) {
+			// Set up and configure mock http responders.
+			httpmock.Activate()
+			defer httpmock.DeactivateAndReset()
+			for _, mr := range test.mockRoutes {
+				httpmock.RegisterResponder(mr.route.method, mr.route.endpoint, mr.generate())
+			}
+
+			// Execute the test
+			users, err := client.FindUsersByRelation(ctx, test.tuple)
+
+			if test.expectedErr != "" {
+				c.Assert(err, qt.ErrorMatches, test.expectedErr)
+				c.Assert(users, qt.IsNil)
+			} else {
+				c.Assert(err, qt.IsNil)
+				c.Assert(users, qt.ContentEquals, test.expectedUsers)
+			}
+
+			// Validate that the mock routes were called as expected.
+			for _, mr := range test.mockRoutes {
+				mr.finish(c)
+			}
+		})
+	}
+}
+
+func TestClient_TraverseTree(t *testing.T) {
+	c := qt.New(t)
+
+	ctx := context.Background()
+	client := getTestClient(c)
+
+	tests := []struct {
+		about         string
+		node          openfga.Node
+		mockRoutes    []*RouteResponder
+		expectedUsers map[string]bool
+		expectedErr   string
+	}{{
+		about: "Union node is expanded properly",
+		node: openfga.Node{
+			Union: &openfga.Nodes{
+				Nodes: &[]openfga.Node{{
+					Leaf: &openfga.Leaf{
+						Users: &openfga.Users{Users: &[]string{"user:XYZ"}},
+					},
+				}, {
+					Leaf: &openfga.Leaf{
+						Users: &openfga.Users{Users: &[]string{"user:ABC"}},
+					},
+				}},
+			},
+		},
+		expectedUsers: map[string]bool{
+			"user:XYZ": true,
+			"user:ABC": true,
+		},
+	}}
+
+	for _, test := range tests {
+		test := test
+		c.Run(test.about, func(c *qt.C) {
+			// Set up and configure mock http responders.
+			httpmock.Activate()
+			defer httpmock.DeactivateAndReset()
+			for _, mr := range test.mockRoutes {
+				httpmock.RegisterResponder(mr.route.method, mr.route.endpoint, mr.generate())
+			}
+
+			// Execute the test
+			userMap, err := ofga.TraverseTree(client, ctx, &test.node)
+
+			if test.expectedErr != "" {
+				c.Assert(err, qt.ErrorMatches, test.expectedErr)
+				c.Assert(userMap, qt.IsNil)
+			} else {
+				c.Assert(err, qt.IsNil)
+				c.Assert(userMap, qt.ContentEquals, test.expectedUsers)
+			}
+
+			// Validate that the mock routes were called as expected.
+			for _, mr := range test.mockRoutes {
+				mr.finish(c)
+			}
+		})
+	}
+}
+
+func TestClient_Expand(t *testing.T) {
+	c := qt.New(t)
+
+	ctx := context.Background()
+	client := getTestClient(c)
+
+	tests := []struct {
+		about         string
+		userStrings   []string
+		mockRoutes    []*RouteResponder
+		expectedUsers map[string]bool
+		expectedErr   string
+	}{{
+		about:       "calling expand on an unknown user representation string results in an error",
+		userStrings: []string{"organization:123#member#XYZ"},
+		expectedErr: "unknown user representation",
+	}, {
+		about:       "error converting a userString into ofga.Tuple representation is returned to caller",
+		userStrings: []string{"organization123#member"},
+		mockRoutes: []*RouteResponder{{
+			route:              Expand,
+			mockResponseStatus: http.StatusInternalServerError,
+		}},
+		expectedErr: "failed to parse tuple.*",
+	}, {
+		about:       "error from expanding a userSet is returned to the caller",
+		userStrings: []string{"organization:123#member"},
+		mockRoutes: []*RouteResponder{{
+			route:              Expand,
+			mockResponseStatus: http.StatusInternalServerError,
+		}},
+		expectedErr: "failed to expand.*",
+	}, {
+		about:       "calling expand on a userSet expands it to the individual users",
+		userStrings: []string{"organization:123#member"},
+		mockRoutes: []*RouteResponder{{
+			route: Expand,
+			mockResponse: openfga.ExpandResponse{
+				Tree: &openfga.UsersetTree{
+					Root: &openfga.Node{
+						Leaf: &openfga.Leaf{
+							Users: &openfga.Users{Users: &[]string{"user:ABC", "user:XYZ"}},
+						},
+					},
+				},
+			},
+		}},
+		expectedUsers: map[string]bool{
+			"user:ABC": true,
+			"user:XYZ": true,
+		},
+	}}
+
+	for _, test := range tests {
+		test := test
+		c.Run(test.about, func(c *qt.C) {
+			// Set up and configure mock http responders.
+			httpmock.Activate()
+			defer httpmock.DeactivateAndReset()
+			for _, mr := range test.mockRoutes {
+				httpmock.RegisterResponder(mr.route.method, mr.route.endpoint, mr.generate())
+			}
+
+			// Execute the test
+			userMap, err := ofga.Expand(client, ctx, test.userStrings...)
+
+			if test.expectedErr != "" {
+				c.Assert(err, qt.ErrorMatches, test.expectedErr)
+				c.Assert(userMap, qt.IsNil)
+			} else {
+				c.Assert(err, qt.IsNil)
+				c.Assert(userMap, qt.ContentEquals, test.expectedUsers)
+			}
+
+			// Validate that the mock routes were called as expected.
+			for _, mr := range test.mockRoutes {
+				mr.finish(c)
+			}
+		})
+	}
+}
+
+func TestClient_ExpandComputed(t *testing.T) {
+	c := qt.New(t)
+
+	ctx := context.Background()
+	client := getTestClient(c)
+
+	tests := []struct {
+		about         string
+		leaf          openfga.Leaf
+		computed      []openfga.Computed
+		mockRoutes    []*RouteResponder
+		expectedUsers map[string]bool
+		expectedErr   string
+	}{}
+
+	for _, test := range tests {
+		test := test
+		c.Run(test.about, func(c *qt.C) {
+			// Set up and configure mock http responders.
+			httpmock.Activate()
+			defer httpmock.DeactivateAndReset()
+			for _, mr := range test.mockRoutes {
+				httpmock.RegisterResponder(mr.route.method, mr.route.endpoint, mr.generate())
+			}
+
+			// Execute the test
+			userMap, err := ofga.ExpandComputed(client, ctx, test.leaf, test.computed...)
+
+			if test.expectedErr != "" {
+				c.Assert(err, qt.ErrorMatches, test.expectedErr)
+				c.Assert(userMap, qt.IsNil)
+			} else {
+				c.Assert(err, qt.IsNil)
+				c.Assert(userMap, qt.ContentEquals, test.expectedUsers)
 			}
 
 			// Validate that the mock routes were called as expected.
