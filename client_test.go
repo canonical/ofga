@@ -4,7 +4,7 @@
 //
 // However, we can test this integration indirectly by using http mocks.
 // We know that our ofga wrapper communicates with the openfga client, which in
-// turn uses a http client to talk to the actual openfga instance.
+// turn uses a http client to talk to the actual openfga instance, i.e.
 //
 // 	ofga wrapper <---> openfga client <---> http client <---> openfga instance
 //
@@ -15,7 +15,7 @@
 //
 // This can be done by:
 //	- calling specific methods on the wrapper and ensuring that the mock http
-//		client receives the expected request bodies.
+//		client receives the expected requests.
 //  - having the mock http client respond with mock responses and ensuring that
 //		the wrapper receives the expected responses.
 
@@ -24,8 +24,8 @@ package ofga_test
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
+	"net/url"
 	"testing"
 	"time"
 
@@ -49,28 +49,33 @@ var FGAParams = ofga.OpenFGAParams{
 type Route struct {
 	// The http method - http.MethodPost, http.MethodGet, etc
 	method string
-	// The endpoint specified as an exact path, or a regex prefixed with '=~'
+	// The endpoint specified as an exact path, or as a regex prefixed with '=~'
 	// example:
 	//	`/stores`,
 	//	`=~/stores/(w+)\z`   (matches '/stores/<store-id>')
 	endpoint string
 }
 
-// RouteResponder provides a way to define a mock http responder, wherein the
-// request body can be validated as per expectation and mock responses can be
-// returned.
+// RouteResponder provides a way to define a mock http responder, wherein a
+// request to a specific route can be validated as per some predefined
+// expectation and mock responses can be configured to be returned when called.
 type RouteResponder struct {
 	route Route
-	// body is for internal usage. It is used to temporarily store the incoming
+	// _req is for internal usage. It is used to temporarily store the incoming
+	// request to be validated later and should not be set manually
+	_req *http.Request
+	// _body is for internal usage. It is used to temporarily store the incoming
 	// request body to be validated later and should not be set manually.
-	body io.ReadCloser
-	// expectedRequest allows to specify the expected request body for requests
-	// that call this route.
-	expectedRequest any
-	// TODO Path params and expected path params
-	// TODO Query params and expected query params
-	// TODO Check that method params are validated in the expectedRequest
-	// mockResponse allows to configure the exact response body to be returned.
+	expectedReqBody any
+	// expectedReqQueryParams allows to specify the expected request query
+	// params for requests that call this route.
+	expectedReqQueryParams url.Values
+
+	// expectedPathParams allows to specify the expected path parameters for
+	// requests that call this route. They should be specified in the order
+	// that they are expected to be found in the path.
+	expectedPathParams []string
+	// mockResponse allows to configure a mock response body to be returned.
 	mockResponse any
 	// mockResponseStatus allows to configure the response status to be used.
 	// If not specified, defaults to http.StatusOK.
@@ -79,10 +84,11 @@ type RouteResponder struct {
 
 // generate returns a httpmock.Responder function for the Route. This returned
 // function is used by httpmock to generate a response whenever a http request
-// is made to this route.
+// is made to the configured route.
 func (r *RouteResponder) generate() httpmock.Responder {
 	return func(req *http.Request) (*http.Response, error) {
-		r.body = req.Body
+		// Store the incoming request so that it can be validated later.
+		r._req = req
 
 		status := http.StatusOK
 		if r.mockResponseStatus != 0 {
@@ -97,20 +103,29 @@ func (r *RouteResponder) generate() httpmock.Responder {
 }
 
 // finish runs validations for the route, ensuring that the received request
-// body matches the expected request body.
+// matches the predefined expectations.
 func (r *RouteResponder) finish(c *qt.C) {
-	if r.expectedRequest != nil {
+	if r.expectedReqBody != nil {
 		body := make(map[string]any)
-		err := json.NewDecoder(r.body).Decode(&body)
+		err := json.NewDecoder(r._req.Body).Decode(&body)
 		c.Assert(err, qt.IsNil, qt.Commentf("received request body is in incorrect format: %s", err))
 
 		expectedBody := make(map[string]any)
-		marshal, err := json.Marshal(r.expectedRequest)
+		marshal, err := json.Marshal(r.expectedReqBody)
 		c.Assert(err, qt.IsNil, qt.Commentf("expectedReqBody is in incorrect format: %s", err))
 		err = json.Unmarshal(marshal, &expectedBody)
 		c.Assert(err, qt.IsNil, qt.Commentf("expectedReqBody is in incorrect format: %s", err))
 
 		c.Assert(body, qt.DeepEquals, expectedBody)
+	}
+	if r.expectedReqQueryParams != nil {
+		c.Assert(r._req.URL.Query(), qt.ContentEquals, r.expectedReqQueryParams)
+	}
+	if r.expectedPathParams != nil {
+		for i, expected := range r.expectedPathParams {
+			got := httpmock.MustGetSubmatch(r._req, i+1)
+			c.Assert(got, qt.Equals, expected, qt.Commentf("path parameter mismatch"))
+		}
 	}
 }
 
@@ -211,7 +226,7 @@ func TestNewClient(t *testing.T) {
 		},
 		expectedErr: "OpenFGA configuration: AuthModelID specified without a StoreID",
 	}, {
-		about: "client creation fails when any other configuration issue occurs",
+		about: "client creation fails when any other configuration issue occurs (such as passing an invalid scheme)",
 		params: ofga.OpenFGAParams{
 			Scheme:      "invalidScheme",
 			Host:        "localhost",
@@ -258,10 +273,12 @@ func TestNewClient(t *testing.T) {
 		mockRoutes: []*RouteResponder{{
 			route: ListStore,
 		}, {
-			route:        GetStore,
-			mockResponse: openfga.GetStoreResponse{Name: openfga.PtrString("Test Store")},
+			route:              GetStore,
+			expectedPathParams: []string{FGAParams.StoreID},
+			mockResponse:       openfga.GetStoreResponse{Name: openfga.PtrString("Test Store")},
 		}, {
-			route: ReadAuthModel,
+			route:              ReadAuthModel,
+			expectedPathParams: []string{FGAParams.StoreID, FGAParams.AuthModelID},
 			mockResponse: openfga.ReadAuthorizationModelResponse{
 				AuthorizationModel: &openfga.AuthorizationModel{
 					Id: openfga.PtrString(FGAParams.AuthModelID),
@@ -335,8 +352,9 @@ func TestClient_AddRelation(t *testing.T) {
 			},
 		},
 		mockRoutes: []*RouteResponder{{
-			route: Write,
-			expectedRequest: openfga.WriteRequest{
+			route:              Write,
+			expectedPathParams: []string{FGAParams.StoreID},
+			expectedReqBody: openfga.WriteRequest{
 				Writes: openfga.NewTupleKeys([]openfga.TupleKey{{
 					User:     openfga.PtrString(entityTestUser.String()),
 					Relation: openfga.PtrString(relationEditor.String()),
@@ -399,7 +417,7 @@ func TestClient_CheckRelation(t *testing.T) {
 		}},
 		expectedErr: "cannot check relation .*",
 	}, {
-		about: "relation checked successfully",
+		about: "relation checked successfully and allowed returned as true",
 		tuple: ofga.Tuple{
 			Object:   &entityTestUser,
 			Relation: relationEditor,
@@ -407,7 +425,7 @@ func TestClient_CheckRelation(t *testing.T) {
 		},
 		mockRoutes: []*RouteResponder{{
 			route: Check,
-			expectedRequest: openfga.CheckRequest{
+			expectedReqBody: openfga.CheckRequest{
 				TupleKey: openfga.TupleKey{
 					User:     openfga.PtrString(entityTestUser.String()),
 					Relation: openfga.PtrString(relationEditor.String()),
@@ -420,6 +438,29 @@ func TestClient_CheckRelation(t *testing.T) {
 			},
 		}},
 		expectedAllowed: true,
+	}, {
+		about: "relation checked successfully and allowed returned as false",
+		tuple: ofga.Tuple{
+			Object:   &entityTestUser,
+			Relation: relationEditor,
+			Target:   &entityTestContract,
+		},
+		mockRoutes: []*RouteResponder{{
+			route:              Check,
+			expectedPathParams: []string{FGAParams.StoreID},
+			expectedReqBody: openfga.CheckRequest{
+				TupleKey: openfga.TupleKey{
+					User:     openfga.PtrString(entityTestUser.String()),
+					Relation: openfga.PtrString(relationEditor.String()),
+					Object:   openfga.PtrString(entityTestContract.String()),
+				},
+				AuthorizationModelId: openfga.PtrString(FGAParams.AuthModelID),
+			},
+			mockResponse: openfga.CheckResponse{
+				Allowed: openfga.PtrBool(false),
+			},
+		}},
+		expectedAllowed: false,
 	}}
 
 	for _, test := range tests {
@@ -481,8 +522,9 @@ func TestClient_RemoveRelation(t *testing.T) {
 			Target:   &entityTestContract,
 		}},
 		mockRoutes: []*RouteResponder{{
-			route: Write,
-			expectedRequest: openfga.WriteRequest{
+			route:              Write,
+			expectedPathParams: []string{FGAParams.StoreID},
+			expectedReqBody: openfga.WriteRequest{
 				Deletes: openfga.NewTupleKeys([]openfga.TupleKey{{
 					User:     openfga.PtrString(entityTestUser.String()),
 					Relation: openfga.PtrString(relationEditor.String()),
@@ -537,7 +579,7 @@ func TestClient_CreateStore(t *testing.T) {
 		storeName: "TestStore",
 		mockRoutes: []*RouteResponder{{
 			route:              CreateStore,
-			expectedRequest:    openfga.CreateStoreRequest{Name: "TestStore"},
+			expectedReqBody:    openfga.CreateStoreRequest{Name: "TestStore"},
 			mockResponseStatus: http.StatusInternalServerError,
 		}},
 		expectedErr: "cannot create store.*",
@@ -546,11 +588,10 @@ func TestClient_CreateStore(t *testing.T) {
 		storeName: "TestStore",
 		mockRoutes: []*RouteResponder{{
 			route:           CreateStore,
-			expectedRequest: openfga.CreateStoreRequest{Name: "TestStore"},
+			expectedReqBody: openfga.CreateStoreRequest{Name: "TestStore"},
 			mockResponse:    openfga.CreateStoreResponse{Id: openfga.PtrString("12345")},
 		}},
 		expectedStoreID: "12345",
-		expectedErr:     "",
 	}}
 
 	for _, test := range tests {
@@ -607,6 +648,7 @@ func TestClient_ListStores(t *testing.T) {
 		continuationToken string
 		mockRoutes        []*RouteResponder
 		expectedStores    []openfga.Store
+		expectedNextToken string
 		expectedErr       string
 	}{{
 		about: "error returned by the client is returned to the caller",
@@ -616,14 +658,22 @@ func TestClient_ListStores(t *testing.T) {
 		}},
 		expectedErr: "cannot list stores.*",
 	}, {
-		about: "stores are listed successfully",
+		about:             "stores are listed successfully",
+		pageSize:          25,
+		continuationToken: "SimulatedToken",
 		mockRoutes: []*RouteResponder{{
 			route: ListStore,
+			expectedReqQueryParams: url.Values{
+				"page_size":          []string{"25"},
+				"continuation_token": []string{"SimulatedToken"},
+			},
 			mockResponse: openfga.ListStoresResponse{
-				Stores: &stores,
+				Stores:            &stores,
+				ContinuationToken: openfga.PtrString("NextToken"),
 			},
 		}},
-		expectedStores: stores,
+		expectedNextToken: "NextToken",
+		expectedStores:    stores,
 	}}
 
 	for _, test := range tests {
@@ -637,14 +687,16 @@ func TestClient_ListStores(t *testing.T) {
 			}
 
 			// Execute the test
-			stores, err := client.ListStores(ctx, test.pageSize, test.continuationToken)
+			lsr, err := client.ListStores(ctx, test.pageSize, test.continuationToken)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
-				c.Assert(stores, qt.DeepEquals, []openfga.Store(nil))
+				c.Assert(lsr.HasStores(), qt.Equals, false)
+				c.Assert(lsr.GetContinuationToken(), qt.Equals, "")
 			} else {
 				c.Assert(err, qt.IsNil)
-				c.Assert(stores, qt.DeepEquals, test.expectedStores)
+				c.Assert(lsr.GetStores(), qt.DeepEquals, test.expectedStores)
+				c.Assert(lsr.GetContinuationToken(), qt.Equals, test.expectedNextToken)
 			}
 
 			// Validate that the mock routes were called as expected.
@@ -678,7 +730,7 @@ func TestClient_ReadChanges(t *testing.T) {
 		pageSize          int32
 		continuationToken string
 		mockRoutes        []*RouteResponder
-		expectedChanges   openfga.ReadChangesResponse
+		expectedResponse  openfga.ReadChangesResponse
 		expectedErr       string
 	}{{
 		about: "error returned by the client is returned to the caller",
@@ -688,18 +740,26 @@ func TestClient_ReadChanges(t *testing.T) {
 		}},
 		expectedErr: "cannot read changes.*",
 	}, {
-		about:      "changes are read successfully",
-		entityType: entityTestContract.Kind.String(), // TODO validate in query params
+		about:             "changes are read successfully",
+		entityType:        entityTestContract.Kind.String(),
+		pageSize:          25,
+		continuationToken: "SimulatedToken",
 		mockRoutes: []*RouteResponder{{
-			route: ReadChanges,
+			route:              ReadChanges,
+			expectedPathParams: []string{FGAParams.StoreID},
+			expectedReqQueryParams: url.Values{
+				"page_size":          []string{"25"},
+				"continuation_token": []string{"SimulatedToken"},
+				"type":               []string{entityTestContract.Kind.String()},
+			},
 			mockResponse: openfga.ReadChangesResponse{
 				Changes:           &changes,
-				ContinuationToken: openfga.PtrString("ABC"),
+				ContinuationToken: openfga.PtrString("NextToken"),
 			},
 		}},
-		expectedChanges: openfga.ReadChangesResponse{
+		expectedResponse: openfga.ReadChangesResponse{
 			Changes:           &changes,
-			ContinuationToken: openfga.PtrString("ABC"),
+			ContinuationToken: openfga.PtrString("NextToken"),
 		},
 	}}
 
@@ -721,7 +781,7 @@ func TestClient_ReadChanges(t *testing.T) {
 				c.Assert(changesResponse, qt.DeepEquals, openfga.ReadChangesResponse{})
 			} else {
 				c.Assert(err, qt.IsNil)
-				c.Assert(changesResponse, qt.DeepEquals, test.expectedChanges)
+				c.Assert(changesResponse, qt.DeepEquals, test.expectedResponse)
 			}
 
 			// Validate that the mock routes were called as expected.
@@ -748,6 +808,10 @@ func TestAuthModelFromJson(t *testing.T) {
 		about:         "conversion fails if json does not have a `type_definitions` property",
 		authModelJson: []byte("{\n  \"type_defs\": [\n    {\n      \"type\": \"user\",\n      \"relations\": {},\n      \"metadata\": null\n    },\n    {\n      \"type\": \"document\",\n      \"relations\": {\n        \"viewer\": {\n          \"union\": {\n            \"child\": [\n              {\n                \"this\": {}\n              },\n              {\n                \"computedUserset\": {\n                  \"object\": \"\",\n                  \"relation\": \"writer\"\n                }\n              }\n            ]\n          }\n        },\n        \"writer\": {\n          \"this\": {}\n        }\n      },\n      \"metadata\": {\n        \"relations\": {\n          \"viewer\": {\n            \"directly_related_user_types\": [\n              {\n                \"type\": \"user\"\n              }\n            ]\n          },\n          \"writer\": {\n            \"directly_related_user_types\": [\n              {\n                \"type\": \"user\"\n              }\n            ]\n          }\n        }\n      }\n    }\n  ],\n  \"schema_version\": \"1.1\"\n}"),
 		expectedErr:   "JSON auth model does not have the \"type_definitions\" property",
+	}, {
+		about:         "conversion fails if `type_definitions` are specified in an incorrect format (using numbers for type instead of string)",
+		authModelJson: []byte("{\n  \"type_definitions\": [\n    {\n      \"type\": 1,\n      \"relations\": {},\n      \"metadata\": null\n    },\n    {\n      \"type\": \"document\",\n      \"relations\": {\n        \"viewer\": {\n          \"union\": {\n            \"child\": [\n              {\n                \"this\": {}\n              },\n              {\n                \"computedUserset\": {\n                  \"object\": \"\",\n                  \"relation\": \"writer\"\n                }\n              }\n            ]\n          }\n        },\n        \"writer\": {\n          \"this\": {}\n        }\n      },\n      \"metadata\": {\n        \"relations\": {\n          \"viewer\": {\n            \"directly_related_user_types\": [\n              {\n                \"type\": \"user\"\n              }\n            ]\n          },\n          \"writer\": {\n            \"directly_related_user_types\": [\n              {\n                \"type\": \"user\"\n              }\n            ]\n          }\n        }\n      }\n    }\n  ],\n  \"schema_version\": \"1.1\"\n}"),
+		expectedErr:   "cannot unmarshal JSON auth model.*",
 	}, {
 		about:             "conversion is successful",
 		authModelJson:     authModelJson,
@@ -795,8 +859,9 @@ func TestClient_CreateAuthModel(t *testing.T) {
 		about:     "auth model is created successfully",
 		authModel: authModel,
 		mockRoutes: []*RouteResponder{{
-			route: WriteAuthModel,
-			expectedRequest: &openfga.WriteAuthorizationModelRequest{
+			route:              WriteAuthModel,
+			expectedPathParams: []string{FGAParams.StoreID},
+			expectedReqBody: &openfga.WriteAuthorizationModelRequest{
 				TypeDefinitions: authModel,
 			},
 			mockResponse: openfga.WriteAuthorizationModelResponse{AuthorizationModelId: openfga.PtrString("XYZ")},
@@ -846,12 +911,12 @@ func TestClient_ListAuthModels(t *testing.T) {
 	}}
 
 	tests := []struct {
-		about              string
-		pageSize           int32
-		continuationToken  string
-		mockRoutes         []*RouteResponder
-		expectedAuthModels []openfga.AuthorizationModel
-		expectedErr        string
+		about             string
+		pageSize          int32
+		continuationToken string
+		mockRoutes        []*RouteResponder
+		expectedResponse  openfga.ReadAuthorizationModelsResponse
+		expectedErr       string
 	}{{
 		about: "error returned by the client is returned to the caller",
 		mockRoutes: []*RouteResponder{{
@@ -860,14 +925,25 @@ func TestClient_ListAuthModels(t *testing.T) {
 		}},
 		expectedErr: "cannot list authorization models.*",
 	}, {
-		about: "auth models are listed successfully",
+		about:             "auth models are listed successfully",
+		pageSize:          25,
+		continuationToken: "SimulatedToken",
 		mockRoutes: []*RouteResponder{{
-			route: ReadAuthModels,
+			route:              ReadAuthModels,
+			expectedPathParams: []string{FGAParams.StoreID},
+			expectedReqQueryParams: url.Values{
+				"page_size":          []string{"25"},
+				"continuation_token": []string{"SimulatedToken"},
+			},
 			mockResponse: openfga.ReadAuthorizationModelsResponse{
 				AuthorizationModels: &authModelsResp,
+				ContinuationToken:   openfga.PtrString("NextToken"),
 			},
 		}},
-		expectedAuthModels: authModelsResp,
+		expectedResponse: openfga.ReadAuthorizationModelsResponse{
+			AuthorizationModels: &authModelsResp,
+			ContinuationToken:   openfga.PtrString("NextToken"),
+		},
 	}}
 
 	for _, test := range tests {
@@ -881,14 +957,14 @@ func TestClient_ListAuthModels(t *testing.T) {
 			}
 
 			// Execute the test
-			authModels, err := client.ListAuthModels(ctx, test.pageSize, test.continuationToken)
+			modelsResponse, err := client.ListAuthModels(ctx, test.pageSize, test.continuationToken)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
-				c.Assert(authModels, qt.DeepEquals, []openfga.AuthorizationModel(nil))
+				c.Assert(modelsResponse, qt.DeepEquals, openfga.ReadAuthorizationModelsResponse{})
 			} else {
 				c.Assert(err, qt.IsNil)
-				c.Assert(authModels, qt.DeepEquals, test.expectedAuthModels)
+				c.Assert(modelsResponse, qt.DeepEquals, test.expectedResponse)
 			}
 
 			// Validate that the mock routes were called as expected.
@@ -929,7 +1005,8 @@ func TestClient_GetAuthModel(t *testing.T) {
 		about:       "auth model is returned successfully",
 		authModelID: FGAParams.AuthModelID,
 		mockRoutes: []*RouteResponder{{
-			route: ReadAuthModel,
+			route:              ReadAuthModel,
+			expectedPathParams: []string{FGAParams.StoreID, FGAParams.AuthModelID},
 			mockResponse: openfga.ReadAuthorizationModelResponse{
 				AuthorizationModel: &authModelResp,
 			},
@@ -1083,7 +1160,7 @@ func TestClient_FindMatchingTuples(t *testing.T) {
 		tuple: ofga.Tuple{},
 		mockRoutes: []*RouteResponder{{
 			route:           Read,
-			expectedRequest: openfga.ReadRequest{},
+			expectedReqBody: openfga.ReadRequest{},
 			mockResponse: openfga.ReadResponse{
 				Tuples: &[]openfga.Tuple{{
 					Key:       &openfga.TupleKey{User: openfga.PtrString("userabc"), Relation: openfga.PtrString("member"), Object: openfga.PtrString("organization:123")},
@@ -1097,14 +1174,14 @@ func TestClient_FindMatchingTuples(t *testing.T) {
 		tuple: ofga.Tuple{},
 		mockRoutes: []*RouteResponder{{
 			route:           Read,
-			expectedRequest: openfga.ReadRequest{},
+			expectedReqBody: openfga.ReadRequest{},
 			mockResponse: openfga.ReadResponse{
 				Tuples:            &readTuples,
-				ContinuationToken: openfga.PtrString("SimulatedToken"),
+				ContinuationToken: openfga.PtrString("NextToken"),
 			},
 		}},
 		expectedTuples:            readConvertedTuples,
-		expectedContinuationToken: "SimulatedToken",
+		expectedContinuationToken: "NextToken",
 	}, {
 		about: "passing in a valid tuple for the Read API returns matching tuples in the system",
 		tuple: ofga.Tuple{
@@ -1115,8 +1192,9 @@ func TestClient_FindMatchingTuples(t *testing.T) {
 		continuationToken: "SimulatedToken",
 		pageSize:          50,
 		mockRoutes: []*RouteResponder{{
-			route: Read,
-			expectedRequest: openfga.ReadRequest{
+			route:              Read,
+			expectedPathParams: []string{FGAParams.StoreID},
+			expectedReqBody: openfga.ReadRequest{
 				TupleKey:          &openfga.TupleKey{User: openfga.PtrString("user:XYZ"), Relation: openfga.PtrString("member"), Object: openfga.PtrString("organization:123")},
 				PageSize:          openfga.PtrInt32(50),
 				ContinuationToken: openfga.PtrString("SimulatedToken"),
@@ -1248,7 +1326,7 @@ func TestClient_FindUsersByRelation(t *testing.T) {
 		}},
 		expectedErr: "cannot execute Expand request.*",
 	}, {
-		about: "error due to an invalid tree structure being returned is propagated forward",
+		about: "error due to an invalid tree (without root) being returned is propagated forward",
 		tuple: ofga.Tuple{
 			Relation: "member",
 			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
@@ -1299,7 +1377,15 @@ func TestClient_FindUsersByRelation(t *testing.T) {
 			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
 		},
 		mockRoutes: []*RouteResponder{{
-			route: Expand,
+			route:              Expand,
+			expectedPathParams: []string{FGAParams.StoreID},
+			expectedReqBody: openfga.ExpandRequest{
+				TupleKey: openfga.TupleKey{
+					Relation: openfga.PtrString("member"),
+					Object:   openfga.PtrString("organization:123"),
+				},
+				AuthorizationModelId: openfga.PtrString(FGAParams.AuthModelID),
+			},
 			mockResponse: openfga.ExpandResponse{
 				Tree: &openfga.UsersetTree{
 					Root: &openfga.Node{
@@ -1358,7 +1444,20 @@ func TestClient_TraverseTree(t *testing.T) {
 		expectedUsers map[string]bool
 		expectedErr   string
 	}{{
-		about: "Union node is expanded properly",
+		about: "union node with an invalid childNode causes an error",
+		node: openfga.Node{
+			Union: &openfga.Nodes{
+				Nodes: &[]openfga.Node{{
+					Leaf: &openfga.Leaf{
+						Users: &openfga.Users{Users: &[]string{"user:XYZ"}},
+					},
+				}, {},
+				},
+			},
+		},
+		expectedErr: "unknown node type",
+	}, {
+		about: "union node is expanded properly",
 		node: openfga.Node{
 			Union: &openfga.Nodes{
 				Nodes: &[]openfga.Node{{
@@ -1375,6 +1474,83 @@ func TestClient_TraverseTree(t *testing.T) {
 		expectedUsers: map[string]bool{
 			"user:XYZ": true,
 			"user:ABC": true,
+		},
+	}, {
+		about: "leaf node without any Users, Computed or TupleToUserSet fields raises an error",
+		node: openfga.Node{
+			Leaf: &openfga.Leaf{},
+		},
+		expectedErr: "unknown leaf type",
+	}, {
+		about: "leaf node with improper user representation raises an error",
+		node: openfga.Node{
+			Leaf: &openfga.Leaf{
+				Users: &openfga.Users{Users: &[]string{"user:XYZ##"}},
+			},
+		},
+		expectedErr: "unknown user representation",
+	}, {
+		about: "leaf node with proper user returns expected users",
+		node: openfga.Node{
+			Leaf: &openfga.Leaf{
+				Users: &openfga.Users{Users: &[]string{"user:XYZ"}},
+			},
+		},
+		expectedUsers: map[string]bool{
+			"user:XYZ": true,
+		},
+	}, {
+		about: "leaf node with computed node is expanded properly ",
+		node: openfga.Node{
+			Leaf: &openfga.Leaf{
+				Computed: &openfga.Computed{
+					Userset: openfga.PtrString("organization:123#member"),
+				},
+			},
+		},
+		mockRoutes: []*RouteResponder{{
+			route: Expand,
+			mockResponse: openfga.ExpandResponse{
+				Tree: &openfga.UsersetTree{
+					Root: &openfga.Node{
+						Leaf: &openfga.Leaf{
+							Users: &openfga.Users{Users: &[]string{"user:ABC", "user:XYZ"}},
+						},
+					},
+				},
+			},
+		}},
+		expectedUsers: map[string]bool{
+			"user:ABC": true,
+			"user:XYZ": true,
+		},
+	}, {
+		about: "leaf node with tupleToUserSet node is expanded properly ",
+		node: openfga.Node{
+			Leaf: &openfga.Leaf{
+				TupleToUserset: &openfga.UsersetTreeTupleToUserset{
+					Computed: &[]openfga.Computed{{
+						openfga.PtrString("organization:123#member"),
+					}},
+				},
+			},
+		},
+		mockRoutes: []*RouteResponder{{
+			route:              Expand,
+			expectedPathParams: []string{FGAParams.StoreID},
+			mockResponse: openfga.ExpandResponse{
+				Tree: &openfga.UsersetTree{
+					Root: &openfga.Node{
+						Leaf: &openfga.Leaf{
+							Users: &openfga.Users{Users: &[]string{"user:ABC", "user:XYZ"}},
+						},
+					},
+				},
+			},
+		}},
+		expectedUsers: map[string]bool{
+			"user:ABC": true,
+			"user:XYZ": true,
 		},
 	}}
 
@@ -1420,6 +1596,10 @@ func TestClient_Expand(t *testing.T) {
 		expectedUsers map[string]bool
 		expectedErr   string
 	}{{
+		about:         "calling expand on single user returns the user as is",
+		userStrings:   []string{"user:XYZ"},
+		expectedUsers: map[string]bool{"user:XYZ": true},
+	}, {
 		about:       "calling expand on an unknown user representation string results in an error",
 		userStrings: []string{"organization:123#member#XYZ"},
 		expectedErr: "unknown user representation",
@@ -1443,7 +1623,8 @@ func TestClient_Expand(t *testing.T) {
 		about:       "calling expand on a userSet expands it to the individual users",
 		userStrings: []string{"organization:123#member"},
 		mockRoutes: []*RouteResponder{{
-			route: Expand,
+			route:              Expand,
+			expectedPathParams: []string{FGAParams.StoreID},
 			mockResponse: openfga.ExpandResponse{
 				Tree: &openfga.UsersetTree{
 					Root: &openfga.Node{
@@ -1502,7 +1683,43 @@ func TestClient_ExpandComputed(t *testing.T) {
 		mockRoutes    []*RouteResponder
 		expectedUsers map[string]bool
 		expectedErr   string
-	}{}
+	}{{
+		about:       "calling expandComputed on a node without a userSet results in an error",
+		computed:    []openfga.Computed{{}},
+		expectedErr: "missing userSet",
+	}, {
+		about: "calling expandComputed on a node with a userSet with an invalid representation results in an error",
+		computed: []openfga.Computed{{
+			Userset: openfga.PtrString("organization:123#member#admin"),
+		}},
+		mockRoutes: []*RouteResponder{{
+			route:              Expand,
+			mockResponseStatus: http.StatusInternalServerError,
+		}},
+		expectedErr: "unknown user representation",
+	}, {
+		about: "calling expandComputed on a node with a userSet expands the userSet",
+		computed: []openfga.Computed{{
+			Userset: openfga.PtrString("organization:123#member"),
+		}},
+		mockRoutes: []*RouteResponder{{
+			route:              Expand,
+			expectedPathParams: []string{FGAParams.StoreID},
+			mockResponse: openfga.ExpandResponse{
+				Tree: &openfga.UsersetTree{
+					Root: &openfga.Node{
+						Leaf: &openfga.Leaf{
+							Users: &openfga.Users{Users: &[]string{"user:ABC", "user:XYZ"}},
+						},
+					},
+				},
+			},
+		}},
+		expectedUsers: map[string]bool{
+			"user:ABC": true,
+			"user:XYZ": true,
+		},
+	}}
 
 	for _, test := range tests {
 		test := test
@@ -1523,6 +1740,200 @@ func TestClient_ExpandComputed(t *testing.T) {
 			} else {
 				c.Assert(err, qt.IsNil)
 				c.Assert(userMap, qt.ContentEquals, test.expectedUsers)
+			}
+
+			// Validate that the mock routes were called as expected.
+			for _, mr := range test.mockRoutes {
+				mr.finish(c)
+			}
+		})
+	}
+}
+
+func TestValidateTupleForFindAccessibleObjectsByRelation(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		about       string
+		tuple       ofga.Tuple
+		expectedErr string
+	}{{
+		about: "error when tuple.Object.Kind is missing",
+		tuple: ofga.Tuple{
+			Object: &ofga.Entity{ID: "XYZ"},
+		},
+		expectedErr: "missing tuple.Object",
+	}, {
+		about: "error when tuple.Object.ID is missing",
+		tuple: ofga.Tuple{
+			Object: &ofga.Entity{Kind: "user"},
+		},
+		expectedErr: "missing tuple.Object",
+	}, {
+		about: "error when tuple.Relation is missing",
+		tuple: ofga.Tuple{
+			Object: &ofga.Entity{Kind: "user", ID: "XYZ"},
+		},
+		expectedErr: "missing tuple.Relation",
+	}, {
+		about: "error when tuple.Target.Kind is missing",
+		tuple: ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "XYZ"},
+			Relation: "member",
+			Target:   &ofga.Entity{},
+		},
+		expectedErr: "only tuple.Target.Kind must be set",
+	}, {
+		about: "error when tuple.Target.ID is specified",
+		tuple: ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "XYZ"},
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
+		},
+		expectedErr: "only tuple.Target.Kind must be set",
+	}, {
+		about: "error when tuple.Target.Relation is specified",
+		tuple: ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "XYZ"},
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization", Relation: "admin"},
+		},
+		expectedErr: "only tuple.Target.Kind must be set",
+	}, {
+		about: "no error when tuple is specified correctly",
+		tuple: ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "XYZ"},
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization"},
+		},
+	}}
+
+	for _, test := range tests {
+		test := test
+		c.Run(test.about, func(c *qt.C) {
+			// Execute the test
+			err := ofga.ValidateTupleForFindAccessibleObjectsByRelation(test.tuple)
+
+			if test.expectedErr != "" {
+				c.Assert(err, qt.ErrorMatches, test.expectedErr)
+			} else {
+				c.Assert(err, qt.IsNil)
+			}
+		})
+	}
+}
+
+func TestClient_FindAccessibleObjectsByRelation(t *testing.T) {
+	c := qt.New(t)
+
+	ctx := context.Background()
+	client := getTestClient(c)
+
+	tests := []struct {
+		about            string
+		tuple            ofga.Tuple
+		contextualTuples []ofga.Tuple
+		mockRoutes       []*RouteResponder
+		expectedObjects  []ofga.Entity
+		expectedErr      string
+	}{{
+		about: "passing in an invalid tuple for the ListObjects API returns an error",
+		tuple: ofga.Tuple{
+			Relation: "",
+			Object:   &ofga.Entity{Kind: "user", ID: "XYZ"},
+		},
+		expectedErr: "invalid tuple for FindAccessibleObjectsByRelation.*",
+	}, {
+		about: "error returned by the underlying client is forwarded to the caller",
+		tuple: ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "XYZ"},
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization"},
+		},
+		mockRoutes: []*RouteResponder{{
+			route: ListObjects,
+			expectedReqBody: openfga.ListObjectsRequest{
+				AuthorizationModelId: openfga.PtrString(FGAParams.AuthModelID),
+				Type:                 "organization",
+				Relation:             "member",
+				User:                 "user:XYZ",
+			},
+			mockResponseStatus: http.StatusInternalServerError,
+		}},
+		expectedErr: "cannot list objects.*",
+	}, {
+		about: "error parsing ListObjects response into internal representation is raised to caller",
+		tuple: ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "XYZ"},
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization"},
+		},
+		mockRoutes: []*RouteResponder{{
+			route: ListObjects,
+			expectedReqBody: openfga.ListObjectsRequest{
+				AuthorizationModelId: openfga.PtrString(FGAParams.AuthModelID),
+				Type:                 "organization",
+				Relation:             "member",
+				User:                 "user:XYZ",
+			},
+			mockResponse: openfga.ListObjectsResponse{Objects: &[]string{"", "organization:123"}},
+		}},
+		expectedErr: "cannot parse entity .* from ListObjects response.*",
+	}, {
+		about: "successful response",
+		tuple: ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "XYZ"},
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization"},
+		},
+		contextualTuples: []ofga.Tuple{{
+			Object:   &ofga.Entity{Kind: "user", ID: "XYZ"},
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization", ID: "456"},
+		}},
+		mockRoutes: []*RouteResponder{{
+			route:              ListObjects,
+			expectedPathParams: []string{FGAParams.StoreID},
+			expectedReqBody: openfga.ListObjectsRequest{
+				AuthorizationModelId: openfga.PtrString(FGAParams.AuthModelID),
+				Type:                 "organization",
+				Relation:             "member",
+				User:                 "user:XYZ",
+				ContextualTuples: &openfga.ContextualTupleKeys{
+					TupleKeys: []openfga.TupleKey{{
+						User:     openfga.PtrString("user:XYZ"),
+						Relation: openfga.PtrString("member"),
+						Object:   openfga.PtrString("organization:456"),
+					}},
+				},
+			},
+			mockResponse: openfga.ListObjectsResponse{Objects: &[]string{"organization:456", "organization:123"}},
+		}},
+		expectedObjects: []ofga.Entity{
+			{Kind: "organization", ID: "123"},
+			{Kind: "organization", ID: "456"},
+		},
+	}}
+
+	for _, test := range tests {
+		test := test
+		c.Run(test.about, func(c *qt.C) {
+			// Set up and configure mock http responders.
+			httpmock.Activate()
+			defer httpmock.DeactivateAndReset()
+			for _, mr := range test.mockRoutes {
+				httpmock.RegisterResponder(mr.route.method, mr.route.endpoint, mr.generate())
+			}
+
+			// Execute the test
+			objects, err := client.FindAccessibleObjectsByRelation(ctx, test.tuple, test.contextualTuples...)
+
+			if test.expectedErr != "" {
+				c.Assert(err, qt.ErrorMatches, test.expectedErr)
+				c.Assert(objects, qt.IsNil)
+			} else {
+				c.Assert(err, qt.IsNil)
+				c.Assert(objects, qt.ContentEquals, test.expectedObjects)
 			}
 
 			// Validate that the mock routes were called as expected.

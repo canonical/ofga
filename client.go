@@ -205,7 +205,7 @@ func (c *Client) CreateStore(ctx context.Context, name string) (string, error) {
 // pageSize is set to 0, then the default pageSize is used. If this is the
 // initial request, an empty string should be passed in as the
 // continuationToken.
-func (c *Client) ListStores(ctx context.Context, pageSize int32, continuationToken string) ([]openfga.Store, error) {
+func (c *Client) ListStores(ctx context.Context, pageSize int32, continuationToken string) (openfga.ListStoresResponse, error) {
 	lsr := c.api.ListStores(ctx)
 
 	if pageSize != 0 {
@@ -218,9 +218,9 @@ func (c *Client) ListStores(ctx context.Context, pageSize int32, continuationTok
 	resp, _, err := lsr.Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot execute ListStores request %v", err))
-		return nil, fmt.Errorf("cannot list stores %v", err)
+		return openfga.ListStoresResponse{}, fmt.Errorf("cannot list stores %v", err)
 	}
-	return resp.GetStores(), nil
+	return resp, nil
 }
 
 // ReadChanges returns a paginated list of tuple changes (additions and
@@ -233,7 +233,7 @@ func (c *Client) ListStores(ctx context.Context, pageSize int32, continuationTok
 // a specific type. For more information, check: https://openfga.dev/docs/interacting/read-tuple-changes#02-get-changes-for-all-object-types
 func (c *Client) ReadChanges(ctx context.Context, entityType string, pageSize int32, continuationToken string) (openfga.ReadChangesResponse, error) {
 	rcr := c.api.ReadChanges(ctx)
-	rcr.Type_(entityType)
+	rcr = rcr.Type_(entityType)
 	if pageSize != 0 {
 		rcr = rcr.PageSize(pageSize)
 	}
@@ -252,26 +252,20 @@ func (c *Client) ReadChanges(ctx context.Context, entityType string, pageSize in
 // AuthModelFromJson converts the input json representation of an authorization
 // model into a slice of TypeDefinitions that can be used with the API.
 func AuthModelFromJson(data []byte) ([]openfga.TypeDefinition, error) {
-	wrapper := make(map[string]interface{})
-	if err := json.Unmarshal(data, &wrapper); err != nil {
+	type jsonModel struct {
+		TypeDefinitions []openfga.TypeDefinition `json:"type_definitions"`
+	}
+
+	var parsed jsonModel
+	if err := json.Unmarshal(data, &parsed); err != nil {
 		return nil, fmt.Errorf("cannot unmarshal JSON auth model: %s", err)
 	}
 
-	if _, ok := wrapper["type_definitions"]; !ok {
-		return nil, errors.New(`JSON auth model does not have the "type_definitions" property`)
+	if parsed.TypeDefinitions == nil {
+		return nil, fmt.Errorf("JSON auth model does not have the \"type_definitions\" property")
 	}
 
-	b, err := json.Marshal(wrapper["type_definitions"])
-	if err != nil {
-		return nil, fmt.Errorf("cannot marshal JSON type definitions: %s", err)
-	}
-
-	var authModel []openfga.TypeDefinition
-	if err = json.Unmarshal(b, &authModel); err != nil {
-		return nil, fmt.Errorf("cannot unmarshal JSON auth model: %s", err)
-	}
-
-	return authModel, nil
+	return parsed.TypeDefinitions, nil
 }
 
 // CreateAuthModel creates a new authorization model as per the provided type
@@ -292,20 +286,20 @@ func (c *Client) CreateAuthModel(ctx context.Context, authModel []openfga.TypeDe
 // openFGA instance. If pageSize is set to 0, then the default pageSize is
 // used. If this is the initial request, an empty string should be passed in
 // as the continuationToken.
-func (c *Client) ListAuthModels(ctx context.Context, pageSize int32, continuationToken string) ([]openfga.AuthorizationModel, error) {
+func (c *Client) ListAuthModels(ctx context.Context, pageSize int32, continuationToken string) (openfga.ReadAuthorizationModelsResponse, error) {
 	rar := c.api.ReadAuthorizationModels(ctx)
 	if pageSize != 0 {
-		rar.PageSize(pageSize)
+		rar = rar.PageSize(pageSize)
 	}
 	if continuationToken != "" {
-		rar.ContinuationToken(continuationToken)
+		rar = rar.ContinuationToken(continuationToken)
 	}
 	resp, _, err := rar.Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot execute ReadAuthorizationModels request %v", err))
-		return nil, fmt.Errorf("cannot list authorization models %v", err)
+		return openfga.ReadAuthorizationModelsResponse{}, fmt.Errorf("cannot list authorization models %v", err)
 	}
-	return resp.GetAuthorizationModels(), nil
+	return resp, nil
 }
 
 // GetAuthModel fetches an authorization model by ID from the openFGA instance.
@@ -374,15 +368,15 @@ func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize i
 	}
 	resp, _, err := c.api.Read(ctx).Body(*rr).Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute Read request %v", err))
+		zapctx.Error(ctx, fmt.Sprintf("cannot execute Read request %s", err))
 		return nil, "", fmt.Errorf("cannot fetch matching tuples, %s", err)
 	}
 	tuples := make([]TimestampedTuple, 0, len(resp.GetTuples()))
 	for _, oTuple := range resp.GetTuples() {
 		t, err := fromOpenFGATupleKey(*oTuple.Key)
 		if err != nil {
-			zapctx.Error(ctx, fmt.Sprintf("cannot parse tuple from Read response %v", err))
-			return nil, "", fmt.Errorf("cannot parse tuple %+v. %w", oTuple, err)
+			zapctx.Error(ctx, fmt.Sprintf("cannot parse tuple from Read response %s", err))
+			return nil, "", fmt.Errorf("cannot parse tuple %+v. %s", oTuple, err)
 		}
 		tuples = append(tuples, TimestampedTuple{
 			Tuple:     t,
@@ -414,7 +408,7 @@ func (c *Client) FindUsersByRelation(ctx context.Context, tuple Tuple) ([]Entity
 	for u := range userStrings {
 		user, err := ParseEntity(u)
 		if err != nil {
-			return nil, fmt.Errorf("cannot parse entity %s from Expand response %v", u, err)
+			return nil, fmt.Errorf("cannot parse entity %s from Expand response %s", u, err)
 		}
 		users = append(users, user)
 	}
@@ -613,7 +607,7 @@ func validateTupleForFindAccessibleObjectsByRelation(tuple Tuple) error {
 		return errors.New("missing tuple.Relation")
 	}
 	if tuple.Target.Kind == "" || tuple.Target.Relation != "" || tuple.Target.ID != "" {
-		return errors.New("invalid tuple.Target, only tuple.Target.Kind must be set")
+		return errors.New("only tuple.Target.Kind must be set")
 	}
 	return nil
 }
@@ -636,7 +630,7 @@ func validateTupleForFindAccessibleObjectsByRelation(tuple Tuple) error {
 // context deadlines, See: https://openfga.dev/docs/interacting/relationship-queries#caveats-and-when-not-to-use-it-3
 func (c *Client) FindAccessibleObjectsByRelation(ctx context.Context, tuple Tuple, contextualTuples ...Tuple) ([]Entity, error) {
 	if err := validateTupleForFindAccessibleObjectsByRelation(tuple); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid tuple for FindAccessibleObjectsByRelation, %s", err)
 	}
 
 	lor := openfga.NewListObjectsRequestWithDefaults()
@@ -646,10 +640,10 @@ func (c *Client) FindAccessibleObjectsByRelation(ctx context.Context, tuple Tupl
 	lor.SetType(tuple.Target.Kind.String())
 
 	if len(contextualTuples) > 0 {
-		keys := make([]openfga.TupleKey, len(contextualTuples))
+		keys := make([]openfga.TupleKey, 0, len(contextualTuples))
 
-		for i, ct := range contextualTuples {
-			keys[i] = ct.toOpenFGATuple()
+		for _, ct := range contextualTuples {
+			keys = append(keys, ct.toOpenFGATuple())
 		}
 
 		lor.SetContextualTuples(*openfga.NewContextualTupleKeys(keys))
@@ -657,14 +651,15 @@ func (c *Client) FindAccessibleObjectsByRelation(ctx context.Context, tuple Tupl
 
 	resp, _, err := c.api.ListObjects(ctx).Body(*lor).Execute()
 	if err != nil {
-		return nil, err
+		zapctx.Error(ctx, fmt.Sprintf("cannot execute ListObjects request %s", err))
+		return nil, fmt.Errorf("cannot list objects, %s", err)
 	}
 
-	objects := make([]Entity, len(resp.GetObjects()))
+	objects := make([]Entity, 0, len(resp.GetObjects()))
 	for _, o := range resp.GetObjects() {
 		e, err := ParseEntity(o)
 		if err != nil {
-			return nil, fmt.Errorf("cannot parse entity %s from ListObjects response %v", o, err)
+			return nil, fmt.Errorf("cannot parse entity %s from ListObjects response %s", o, err)
 		}
 		objects = append(objects, e)
 	}
