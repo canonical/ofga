@@ -1447,11 +1447,12 @@ func TestClient_TraverseTree(t *testing.T) {
 		about: "union node with an invalid childNode causes an error",
 		node: openfga.Node{
 			Union: &openfga.Nodes{
-				Nodes: &[]openfga.Node{{
-					Leaf: &openfga.Leaf{
-						Users: &openfga.Users{Users: &[]string{"user:XYZ"}},
-					},
-				}, {},
+				Nodes: &[]openfga.Node{
+					{
+						Leaf: &openfga.Leaf{
+							Users: &openfga.Users{Users: &[]string{"user:XYZ"}},
+						},
+					}, {},
 				},
 			},
 		},
@@ -1530,7 +1531,7 @@ func TestClient_TraverseTree(t *testing.T) {
 			Leaf: &openfga.Leaf{
 				TupleToUserset: &openfga.UsersetTreeTupleToUserset{
 					Computed: &[]openfga.Computed{{
-						openfga.PtrString("organization:123#member"),
+						Userset: openfga.PtrString("organization:123#member"),
 					}},
 				},
 			},
