@@ -8,6 +8,7 @@ var (
 	FromOpenFGATupleKey                             = fromOpenFGATupleKey
 	ValidateTupleForFindMatchingTuples              = validateTupleForFindMatchingTuples
 	ValidateTupleForFindUsersByRelation             = validateTupleForFindUsersByRelation
+	FindUsersByRelationInternal                     = (*Client).findUsersByRelation
 	TraverseTree                                    = (*Client).traverseTree
 	Expand                                          = (*Client).expand
 	ExpandComputed                                  = (*Client).expandComputed
