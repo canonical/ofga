@@ -55,17 +55,23 @@ type Client struct {
 	AuthModelId string
 }
 
+// jsonAuthModel represents the structure of an authorization model as contained in
+// a json string.
+type jsonAuthModel struct {
+	TypeDefinitions []openfga.TypeDefinition `json:"type_definitions"`
+}
+
 // NewClient returns a wrapped OpenFGA API client ensuring all calls are made
 // to the provided authorisation model (id) and returns what is necessary.
 func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 	if p.Host == "" {
-		return nil, errors.New("OpenFGA configuration: missing host")
+		return nil, errors.New("invalid OpenFGA configuration: missing host")
 	}
 	if p.Port == "" {
-		return nil, errors.New("OpenFGA configuration: missing port")
+		return nil, errors.New("invalid OpenFGA configuration: missing port")
 	}
 	if p.StoreID == "" && p.AuthModelID != "" {
-		return nil, errors.New("OpenFGA configuration: AuthModelID specified without a StoreID")
+		return nil, errors.New("invalid OpenFGA configuration: AuthModelID specified without a StoreID")
 	}
 	zapctx.Info(ctx, "configuring OpenFGA client",
 		zap.String("scheme", p.Scheme),
@@ -89,23 +95,23 @@ func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 	}
 	configuration, err := openfga.NewConfiguration(config)
 	if err != nil {
-		return nil, fmt.Errorf("OpenFGA configuration: %v", err)
+		return nil, fmt.Errorf("invalid OpenFGA configuration: %v", err)
 	}
 	client := openfga.NewAPIClient(configuration)
 	api := client.OpenFgaApi
 
 	_, _, err = api.ListStores(ctx).Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot list stores %v", err))
-		return nil, fmt.Errorf("cannot list stores %v", err)
+		zapctx.Error(ctx, fmt.Sprintf("cannot list stores: %v", err))
+		return nil, fmt.Errorf("cannot list stores: %v", err)
 	}
 
 	// If StoreID is present, validate that such a store exists.
 	if p.StoreID != "" {
 		storeResp, _, err := api.GetStore(ctx).Execute()
 		if err != nil {
-			zapctx.Error(ctx, fmt.Sprintf("cannot retrieve store %v", err))
-			return nil, fmt.Errorf("cannot retrieve store %v", err)
+			zapctx.Error(ctx, fmt.Sprintf("cannot retrieve store: %v", err))
+			return nil, fmt.Errorf("cannot retrieve store: %v", err)
 		}
 		zapctx.Info(ctx, "store found", zap.String("storeName", storeResp.GetName()))
 	}
@@ -114,8 +120,8 @@ func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 	if p.AuthModelID != "" {
 		authModelResp, _, err := api.ReadAuthorizationModel(ctx, p.AuthModelID).Execute()
 		if err != nil {
-			zapctx.Error(ctx, fmt.Sprintf("cannot retrieve authModel %v", err))
-			return nil, fmt.Errorf("cannot retrieve authModel %v", err)
+			zapctx.Error(ctx, fmt.Sprintf("cannot retrieve authModel: %v", err))
+			return nil, fmt.Errorf("cannot retrieve authModel: %v", err)
 		}
 		zapctx.Info(ctx, "auth model found", zap.String("authModelID", authModelResp.AuthorizationModel.GetId()))
 	}
@@ -140,8 +146,8 @@ func (c *Client) AddRelation(ctx context.Context, tuples ...Tuple) error {
 	wr.SetWrites(*keys)
 	_, _, err := c.api.Write(ctx).Body(*wr).Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute Write request %v", err))
-		return fmt.Errorf("cannot add relation %v", err)
+		zapctx.Error(ctx, fmt.Sprintf("cannot execute Write request: %v", err))
+		return fmt.Errorf("cannot add relation: %v", err)
 	}
 	return nil
 }
@@ -161,8 +167,8 @@ func (c *Client) CheckRelation(ctx context.Context, tuple Tuple) (bool, error) {
 
 	checkResp, httpResp, err := c.api.Check(ctx).Body(*cr).Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute Check request %v", err))
-		return false, fmt.Errorf("cannot check relation %v", err)
+		zapctx.Error(ctx, fmt.Sprintf("cannot execute Check request: %v", err))
+		return false, fmt.Errorf("cannot check relation: %v", err)
 	}
 	allowed := checkResp.GetAllowed()
 	zapctx.Debug(ctx, "check request internal resp code", zap.Int("code", httpResp.StatusCode), zap.Bool("allowed", allowed))
@@ -184,8 +190,8 @@ func (c *Client) RemoveRelation(ctx context.Context, tuples ...Tuple) error {
 	wr.SetDeletes(*keys)
 	_, _, err := c.api.Write(ctx).Body(*wr).Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute Write request %v", err))
-		return fmt.Errorf("cannot remove relation %v", err)
+		zapctx.Error(ctx, fmt.Sprintf("cannot execute Write request: %v", err))
+		return fmt.Errorf("cannot remove relation: %v", err)
 	}
 	return nil
 }
@@ -195,8 +201,8 @@ func (c *Client) CreateStore(ctx context.Context, name string) (string, error) {
 	csr := openfga.NewCreateStoreRequest(name)
 	resp, _, err := c.api.CreateStore(ctx).Body(*csr).Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute CreateStore request %v", err))
-		return "", fmt.Errorf("cannot create store %v", err)
+		zapctx.Error(ctx, fmt.Sprintf("cannot execute CreateStore request: %v", err))
+		return "", fmt.Errorf("cannot create store: %v", err)
 	}
 	return resp.GetId(), nil
 }
@@ -217,8 +223,8 @@ func (c *Client) ListStores(ctx context.Context, pageSize int32, continuationTok
 
 	resp, _, err := lsr.Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute ListStores request %v", err))
-		return openfga.ListStoresResponse{}, fmt.Errorf("cannot list stores %v", err)
+		zapctx.Error(ctx, fmt.Sprintf("cannot execute ListStores request: %v", err))
+		return openfga.ListStoresResponse{}, fmt.Errorf("cannot list stores: %v", err)
 	}
 	return resp, nil
 }
@@ -243,41 +249,37 @@ func (c *Client) ReadChanges(ctx context.Context, entityType string, pageSize in
 
 	resp, _, err := rcr.Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute ReadChanges request %v", err))
-		return openfga.ReadChangesResponse{}, fmt.Errorf("cannot read changes %v", err)
+		zapctx.Error(ctx, fmt.Sprintf("cannot execute ReadChanges request: %v", err))
+		return openfga.ReadChangesResponse{}, fmt.Errorf("cannot read changes: %v", err)
 	}
 	return resp, nil
 }
 
-// AuthModelFromJson converts the input json representation of an authorization
+// AuthModelFromJSON converts the input json representation of an authorization
 // model into a slice of TypeDefinitions that can be used with the API.
-func AuthModelFromJson(data []byte) ([]openfga.TypeDefinition, error) {
-	type jsonModel struct {
-		TypeDefinitions []openfga.TypeDefinition `json:"type_definitions"`
-	}
-
-	var parsed jsonModel
+func AuthModelFromJSON(data []byte) ([]openfga.TypeDefinition, error) {
+	var parsed jsonAuthModel
 	if err := json.Unmarshal(data, &parsed); err != nil {
-		return nil, fmt.Errorf("cannot unmarshal JSON auth model: %s", err)
+		return nil, fmt.Errorf("cannot unmarshal JSON auth model: %v", err)
 	}
 
 	if parsed.TypeDefinitions == nil {
-		return nil, fmt.Errorf("JSON auth model does not have the \"type_definitions\" property")
+		return nil, fmt.Errorf(`"type_definitions" field not found`)
 	}
 
 	return parsed.TypeDefinitions, nil
 }
 
 // CreateAuthModel creates a new authorization model as per the provided type
-// definitions and returns its ID. The AuthModelFromJson function can be used
+// definitions and returns its ID. The AuthModelFromJSON function can be used
 // to convert an authorization model from json to the slice of type definitions
 // required by this method.
 func (c *Client) CreateAuthModel(ctx context.Context, authModel []openfga.TypeDefinition) (string, error) {
 	ar := openfga.NewWriteAuthorizationModelRequest(authModel)
 	resp, _, err := c.api.WriteAuthorizationModel(ctx).Body(*ar).Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute WriteAuthorizationModel request %v", err))
-		return "", fmt.Errorf("cannot create auth model %v", err)
+		zapctx.Error(ctx, fmt.Sprintf("cannot execute WriteAuthorizationModel request: %v", err))
+		return "", fmt.Errorf("cannot create auth model: %v", err)
 	}
 	return resp.GetAuthorizationModelId(), nil
 }
@@ -296,8 +298,8 @@ func (c *Client) ListAuthModels(ctx context.Context, pageSize int32, continuatio
 	}
 	resp, _, err := rar.Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute ReadAuthorizationModels request %v", err))
-		return openfga.ReadAuthorizationModelsResponse{}, fmt.Errorf("cannot list authorization models %v", err)
+		zapctx.Error(ctx, fmt.Sprintf("cannot execute ReadAuthorizationModels request: %v", err))
+		return openfga.ReadAuthorizationModelsResponse{}, fmt.Errorf("cannot list authorization models: %v", err)
 	}
 	return resp, nil
 }
@@ -306,8 +308,8 @@ func (c *Client) ListAuthModels(ctx context.Context, pageSize int32, continuatio
 func (c *Client) GetAuthModel(ctx context.Context, ID string) (openfga.AuthorizationModel, error) {
 	resp, _, err := c.api.ReadAuthorizationModel(ctx, ID).Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute ReadAuthorizationModel request %v", err))
-		return openfga.AuthorizationModel{}, fmt.Errorf("cannot list authorization models %v", err)
+		zapctx.Error(ctx, fmt.Sprintf("cannot execute ReadAuthorizationModel request: %v", err))
+		return openfga.AuthorizationModel{}, fmt.Errorf("cannot list authorization models: %v", err)
 	}
 	return resp.GetAuthorizationModel(), nil
 }
@@ -356,7 +358,7 @@ func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize i
 	rr := openfga.NewReadRequest()
 	if !tuple.isEmpty() {
 		if err := validateTupleForFindMatchingTuples(tuple); err != nil {
-			return nil, "", fmt.Errorf("invalid tuple for FindMatchingTuples, %s", err)
+			return nil, "", fmt.Errorf("invalid tuple for FindMatchingTuples: %v", err)
 		}
 		rr.SetTupleKey(tuple.toOpenFGATuple())
 	}
@@ -368,15 +370,15 @@ func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize i
 	}
 	resp, _, err := c.api.Read(ctx).Body(*rr).Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute Read request %s", err))
-		return nil, "", fmt.Errorf("cannot fetch matching tuples, %s", err)
+		zapctx.Error(ctx, fmt.Sprintf("cannot execute Read request: %v", err))
+		return nil, "", fmt.Errorf("cannot fetch matching tuples: %v", err)
 	}
 	tuples := make([]TimestampedTuple, 0, len(resp.GetTuples()))
 	for _, oTuple := range resp.GetTuples() {
 		t, err := fromOpenFGATupleKey(*oTuple.Key)
 		if err != nil {
-			zapctx.Error(ctx, fmt.Sprintf("cannot parse tuple from Read response %s", err))
-			return nil, "", fmt.Errorf("cannot parse tuple %+v. %s", oTuple, err)
+			zapctx.Error(ctx, fmt.Sprintf("cannot parse tuple from Read response: %v", err))
+			return nil, "", fmt.Errorf("cannot parse tuple %+v, %v", oTuple, err)
 		}
 		tuples = append(tuples, TimestampedTuple{
 			Tuple:     t,
@@ -400,7 +402,7 @@ func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize i
 // used with caution. The official docs state that the underlying API method
 // was intended to be used for debugging: https://openfga.dev/docs/interacting/relationship-queries#caveats-and-when-not-to-use-it-2
 func (c *Client) FindUsersByRelation(ctx context.Context, tuple Tuple) ([]Entity, error) {
-	userStrings, err := c.findUsersWithRelation(ctx, tuple)
+	userStrings, err := c.findUsersByRelation(ctx, tuple)
 	if err != nil {
 		return nil, err
 	}
@@ -408,7 +410,7 @@ func (c *Client) FindUsersByRelation(ctx context.Context, tuple Tuple) ([]Entity
 	for u := range userStrings {
 		user, err := ParseEntity(u)
 		if err != nil {
-			return nil, fmt.Errorf("cannot parse entity %s from Expand response %s", u, err)
+			return nil, fmt.Errorf("cannot parse entity %v from Expand response: %v", u, err)
 		}
 		users = append(users, user)
 	}
@@ -430,21 +432,21 @@ func validateTupleForFindUsersByRelation(tuple Tuple) error {
 	return nil
 }
 
-// findUsersWithRelation is the internal implementation for
+// findUsersByRelation is the internal implementation for
 // FindUsersByRelation. It returns a set of userStrings representing the
 // list of users that have access to the specified object via the specified
 // relation.
-func (c *Client) findUsersWithRelation(ctx context.Context, tuple Tuple) (map[string]bool, error) {
+func (c *Client) findUsersByRelation(ctx context.Context, tuple Tuple) (map[string]bool, error) {
 	if err := validateTupleForFindUsersByRelation(tuple); err != nil {
-		return nil, fmt.Errorf("invalid tuple for FindUsersWithRelation, %s", err)
+		return nil, fmt.Errorf("invalid tuple for FindUsersByRelation: %v", err)
 	}
 
 	er := openfga.NewExpandRequest(tuple.toOpenFGATuple())
 	er.SetAuthorizationModelId(c.AuthModelId)
 	res, _, err := c.api.Expand(ctx).Body(*er).Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute Expand request %s", err))
-		return nil, fmt.Errorf("cannot execute Expand request %s", err)
+		zapctx.Error(ctx, fmt.Sprintf("cannot execute Expand request: %v", err))
+		return nil, fmt.Errorf("cannot execute Expand request: %v", err)
 	}
 
 	tree := res.GetTree()
@@ -454,7 +456,7 @@ func (c *Client) findUsersWithRelation(ctx context.Context, tuple Tuple) (map[st
 	root := tree.GetRoot()
 	leaves, err := c.traverseTree(ctx, &root)
 	if err != nil {
-		return nil, fmt.Errorf("cannot expand the intermediate results, %s", err)
+		return nil, fmt.Errorf("cannot expand the intermediate results: %v", err)
 	}
 	return leaves, nil
 }
@@ -579,18 +581,18 @@ func (c *Client) expand(ctx context.Context, userStrings ...string) (map[string]
 			t.SetObject(tokens[0])
 			tuple, err := fromOpenFGATupleKey(*t)
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse tuple %s, %s", u, err)
+				return nil, fmt.Errorf("failed to parse tuple %s, %v", u, err)
 			}
-			found, err := c.findUsersWithRelation(ctx, tuple)
+			found, err := c.findUsersByRelation(ctx, tuple)
 			if err != nil {
-				return nil, fmt.Errorf("failed to expand %s, %s", u, err)
+				return nil, fmt.Errorf("failed to expand %s, %v", u, err)
 			}
 			for userString := range found {
 				users[userString] = true
 			}
 		default:
-			zapctx.Error(ctx, fmt.Sprintf("unknown user representation %s", u))
-			return nil, errors.New("unknown user representation")
+			zapctx.Error(ctx, fmt.Sprintf("unknown user representation: %s", u))
+			return nil, fmt.Errorf("unknown user representation: %s", u)
 		}
 	}
 	return users, nil
@@ -630,7 +632,7 @@ func validateTupleForFindAccessibleObjectsByRelation(tuple Tuple) error {
 // context deadlines, See: https://openfga.dev/docs/interacting/relationship-queries#caveats-and-when-not-to-use-it-3
 func (c *Client) FindAccessibleObjectsByRelation(ctx context.Context, tuple Tuple, contextualTuples ...Tuple) ([]Entity, error) {
 	if err := validateTupleForFindAccessibleObjectsByRelation(tuple); err != nil {
-		return nil, fmt.Errorf("invalid tuple for FindAccessibleObjectsByRelation, %s", err)
+		return nil, fmt.Errorf("invalid tuple for FindAccessibleObjectsByRelation: %v", err)
 	}
 
 	lor := openfga.NewListObjectsRequestWithDefaults()
@@ -651,15 +653,15 @@ func (c *Client) FindAccessibleObjectsByRelation(ctx context.Context, tuple Tupl
 
 	resp, _, err := c.api.ListObjects(ctx).Body(*lor).Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute ListObjects request %s", err))
-		return nil, fmt.Errorf("cannot list objects, %s", err)
+		zapctx.Error(ctx, fmt.Sprintf("cannot execute ListObjects request: %v", err))
+		return nil, fmt.Errorf("cannot list objects: %v", err)
 	}
 
 	objects := make([]Entity, 0, len(resp.GetObjects()))
 	for _, o := range resp.GetObjects() {
 		e, err := ParseEntity(o)
 		if err != nil {
-			return nil, fmt.Errorf("cannot parse entity %s from ListObjects response %s", o, err)
+			return nil, fmt.Errorf("cannot parse entity %s from ListObjects response: %v", o, err)
 		}
 		objects = append(objects, e)
 	}

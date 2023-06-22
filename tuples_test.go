@@ -16,8 +16,58 @@ const relationEditor ofga.Relation = "editor"
 var (
 	entityTestUser     = ofga.Entity{Kind: "user", ID: "123"}
 	entityTestContract = ofga.Entity{Kind: "contract", ID: "789"}
-	authModelJson      = []byte("{\n  \"type_definitions\": [\n    {\n      \"type\": \"user\",\n      \"relations\": {},\n      \"metadata\": null\n    },\n    {\n      \"type\": \"document\",\n      \"relations\": {\n        \"viewer\": {\n          \"union\": {\n            \"child\": [\n              {\n                \"this\": {}\n              },\n              {\n                \"computedUserset\": {\n                  \"object\": \"\",\n                  \"relation\": \"writer\"\n                }\n              }\n            ]\n          }\n        },\n        \"writer\": {\n          \"this\": {}\n        }\n      },\n      \"metadata\": {\n        \"relations\": {\n          \"viewer\": {\n            \"directly_related_user_types\": [\n              {\n                \"type\": \"user\"\n              }\n            ]\n          },\n          \"writer\": {\n            \"directly_related_user_types\": [\n              {\n                \"type\": \"user\"\n              }\n            ]\n          }\n        }\n      }\n    }\n  ],\n  \"schema_version\": \"1.1\"\n}")
-	authModel          = []openfga.TypeDefinition{
+	authModelJson      = []byte(`{
+	  "type_definitions": [
+		{
+		  "type": "user",
+		  "relations": {},
+		  "metadata": null
+		},
+		{
+		  "type": "document",
+		  "relations": {
+			"viewer": {
+			  "union": {
+				"child": [
+				  {
+					"this": {}
+				  },
+				  {
+					"computedUserset": {
+					  "object": "",
+					  "relation": "writer"
+					}
+				  }
+				]
+			  }
+			},
+			"writer": {
+			  "this": {}
+			}
+		  },
+		  "metadata": {
+			"relations": {
+			  "viewer": {
+				"directly_related_user_types": [
+				  {
+					"type": "user"
+				  }
+				]
+			  },
+			  "writer": {
+				"directly_related_user_types": [
+				  {
+					"type": "user"
+				  }
+				]
+			  }
+			}
+		  }
+		}
+	  ],
+	  "schema_version": "1.1"
+	}`)
+	authModel = []openfga.TypeDefinition{
 		{Type: "user", Relations: &map[string]openfga.Userset{}},
 		{
 			Type: "document",
