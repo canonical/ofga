@@ -28,13 +28,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/canonical/ofga/mockhttp"
-
 	qt "github.com/frankban/quicktest"
 	"github.com/jarcoal/httpmock"
 	openfga "github.com/openfga/go-sdk"
 
 	"github.com/canonical/ofga"
+	"github.com/canonical/ofga/mockhttp"
 )
 
 var (
@@ -88,7 +87,7 @@ func getTestClient(c *qt.C) *ofga.Client {
 		httpmock.RegisterResponder(cr.Route.Method, cr.Route.Endpoint, cr.Generate())
 	}
 
-	// Create a client
+	// Create a client.
 	newClient, err := ofga.NewClient(context.Background(), validFGAParams)
 	c.Assert(err, qt.IsNil)
 	c.Assert(newClient.AuthModelId, qt.Equals, validFGAParams.AuthModelID)
@@ -208,14 +207,14 @@ func TestNewClient(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure the http mocks
+			// Set up and configure the http mocks.
 			httpmock.Activate()
 			defer httpmock.DeactivateAndReset()
 			for _, mr := range test.mockRoutes {
 				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
 			}
 
-			// Execute the test
+			// Execute the test.
 			client, err := ofga.NewClient(ctx, test.params)
 
 			if test.expectedErr != "" {
@@ -292,7 +291,7 @@ func TestClientAddRelation(t *testing.T) {
 				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
 			}
 
-			// Execute the test
+			// Execute the test.
 			err := client.AddRelation(ctx, test.tuples...)
 
 			if test.expectedErr != "" {
@@ -390,7 +389,7 @@ func TestClientCheckRelation(t *testing.T) {
 				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
 			}
 
-			// Execute the test
+			// Execute the test.
 			allowed, err := client.CheckRelation(ctx, test.tuple)
 
 			if test.expectedErr != "" {
@@ -462,7 +461,7 @@ func TestClientRemoveRelation(t *testing.T) {
 				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
 			}
 
-			// Execute the test
+			// Execute the test.
 			err := client.RemoveRelation(ctx, test.tuples...)
 
 			if test.expectedErr != "" {
@@ -521,7 +520,7 @@ func TestClientCreateStore(t *testing.T) {
 				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
 			}
 
-			// Execute the test
+			// Execute the test.
 			storeID, err := client.CreateStore(ctx, test.storeName)
 
 			if test.expectedErr != "" {
@@ -603,7 +602,7 @@ func TestClientListStores(t *testing.T) {
 				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
 			}
 
-			// Execute the test
+			// Execute the test.
 			lsr, err := client.ListStores(ctx, test.pageSize, test.continuationToken)
 
 			if test.expectedErr != "" {
@@ -690,7 +689,7 @@ func TestClientReadChanges(t *testing.T) {
 				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
 			}
 
-			// Execute the test
+			// Execute the test.
 			changesResponse, err := client.ReadChanges(ctx, test.entityType, test.pageSize, test.continuationToken)
 
 			if test.expectedErr != "" {
@@ -756,7 +755,7 @@ func TestAuthModelFromJson(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		c.Run(test.about, func(c *qt.C) {
-			// Execute the test
+			// Execute the test.
 			model, err := ofga.AuthModelFromJSON(test.authModelJson)
 
 			if test.expectedErr != "" {
@@ -814,7 +813,7 @@ func TestClientCreateAuthModel(t *testing.T) {
 				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
 			}
 
-			// Execute the test
+			// Execute the test.
 			authModelID, err := client.CreateAuthModel(ctx, test.authModel)
 
 			if test.expectedErr != "" {
@@ -891,7 +890,7 @@ func TestClientListAuthModels(t *testing.T) {
 				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
 			}
 
-			// Execute the test
+			// Execute the test.
 			modelsResponse, err := client.ListAuthModels(ctx, test.pageSize, test.continuationToken)
 
 			if test.expectedErr != "" {
@@ -959,7 +958,7 @@ func TestClientGetAuthModel(t *testing.T) {
 				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
 			}
 
-			// Execute the test
+			// Execute the test.
 			model, err := client.GetAuthModel(ctx, test.authModelID)
 
 			if test.expectedErr != "" {
@@ -1021,7 +1020,7 @@ func TestValidateTupleForFindMatchingTuples(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		c.Run(test.about, func(c *qt.C) {
-			// Execute the test
+			// Execute the test.
 			err := ofga.ValidateTupleForFindMatchingTuples(test.tuple)
 
 			if test.expectedErr != "" {
@@ -1151,7 +1150,7 @@ func TestClientFindMatchingTuples(t *testing.T) {
 				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
 			}
 
-			// Execute the test
+			// Execute the test.
 			tuples, cToken, err := client.FindMatchingTuples(ctx, test.tuple, test.pageSize, test.continuationToken)
 
 			if test.expectedErr != "" {
@@ -1218,7 +1217,7 @@ func TestValidateTupleForFindUsersByRelation(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		c.Run(test.about, func(c *qt.C) {
-			// Execute the test
+			// Execute the test.
 			err := ofga.ValidateTupleForFindUsersByRelation(test.tuple)
 
 			if test.expectedErr != "" {
@@ -1322,7 +1321,7 @@ func TestClientFindUsersByRelation(t *testing.T) {
 				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
 			}
 
-			// Execute the test
+			// Execute the test.
 			users, err := client.FindUsersByRelation(ctx, test.tuple, test.maxDepth)
 
 			if test.expectedErr != "" {
@@ -1455,7 +1454,7 @@ func TestClientFindUsersByRelationInternal(t *testing.T) {
 				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
 			}
 
-			// Execute the test
+			// Execute the test.
 			users, err := ofga.FindUsersByRelationInternal(client, ctx, test.tuple, test.maxDepth)
 
 			if test.expectedErr != "" {
@@ -1669,7 +1668,7 @@ func TestClientTraverseTree(t *testing.T) {
 				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
 			}
 
-			// Execute the test
+			// Execute the test.
 			userMap, err := ofga.TraverseTree(client, ctx, &test.node, test.maxDepth)
 
 			if test.expectedErr != "" {
@@ -1769,7 +1768,7 @@ func TestClientExpand(t *testing.T) {
 				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
 			}
 
-			// Execute the test
+			// Execute the test.
 			userMap, err := ofga.Expand(client, ctx, test.maxDepth, test.userStrings...)
 
 			if test.expectedErr != "" {
@@ -1862,7 +1861,7 @@ func TestClientExpandComputed(t *testing.T) {
 				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
 			}
 
-			// Execute the test
+			// Execute the test.
 			userMap, err := ofga.ExpandComputed(client, ctx, test.maxDepth, test.leaf, test.computed...)
 
 			if test.expectedErr != "" {
@@ -1942,7 +1941,7 @@ func TestValidateTupleForFindAccessibleObjectsByRelation(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		c.Run(test.about, func(c *qt.C) {
-			// Execute the test
+			// Execute the test.
 			err := ofga.ValidateTupleForFindAccessibleObjectsByRelation(test.tuple)
 
 			if test.expectedErr != "" {
@@ -2056,7 +2055,7 @@ func TestClientFindAccessibleObjectsByRelation(t *testing.T) {
 				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
 			}
 
-			// Execute the test
+			// Execute the test.
 			objects, err := client.FindAccessibleObjectsByRelation(ctx, test.tuple, test.contextualTuples...)
 
 			if test.expectedErr != "" {

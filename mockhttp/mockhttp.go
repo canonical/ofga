@@ -29,6 +29,7 @@ type Route struct {
 // request to a specific route can be validated as per some predefined
 // expectation and mock responses can be configured to be returned when called.
 type RouteResponder struct {
+	// Route refers to a callable API endpoint.
 	Route Route
 	// req is used to temporarily store the incoming request to be validated
 	// later.
