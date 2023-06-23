@@ -19,7 +19,7 @@ import (
 // OpenFGAParams holds parameters needed to connect to the OpenFGA server.
 type OpenFGAParams struct {
 	Scheme string
-	// The host must be specified without the scheme
+	// Host must be specified without the scheme
 	// (i.e. `api.fga.example` instead of `https://api.fga.example`).
 	Host        string
 	Port        string
@@ -457,13 +457,13 @@ func (c *Client) findUsersByRelation(ctx context.Context, tuple Tuple, maxDepth 
 
 	er := openfga.NewExpandRequest(tuple.toOpenFGATuple())
 	er.SetAuthorizationModelId(c.AuthModelId)
-	res, _, err := c.api.Expand(ctx).Body(*er).Execute()
+	resp, _, err := c.api.Expand(ctx).Body(*er).Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot execute Expand request: %v", err))
 		return nil, fmt.Errorf("cannot execute Expand request: %v", err)
 	}
 
-	tree := res.GetTree()
+	tree := resp.GetTree()
 	if !tree.HasRoot() {
 		return nil, errors.New("tree from Expand response has no root")
 	}

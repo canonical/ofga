@@ -1,4 +1,4 @@
-// Copyright 2022 Canonical Ltd.
+// Copyright 2023 Canonical Ltd.
 
 package version_test
 

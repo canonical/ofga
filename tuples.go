@@ -80,11 +80,11 @@ type Tuple struct {
 // toOpenFGATuple converts our Tuple struct into an OpenFGA TupleKey.
 func (t Tuple) toOpenFGATuple() openfga.TupleKey {
 	k := openfga.NewTupleKey()
-	// in some cases specifying the object is not required
+	// In some cases, specifying the object is not required.
 	if t.Object != nil {
 		k.SetUser(t.Object.String())
 	}
-	// in some cases specifying the relation is not required
+	// In some cases, specifying the relation is not required.
 	if t.Relation != "" {
 		k.SetRelation(t.Relation.String())
 	}
