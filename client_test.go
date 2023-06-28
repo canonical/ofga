@@ -407,10 +407,9 @@ func TestClientCheckRelation(t *testing.T) {
 	}
 }
 
-// TestClientCheckRelationHandlesOptions only verifies the correct handling of
-// options, so the setup is so that the actual check returns successful (i.e.,
-// "allowed").
-func TestClientCheckRelationHandlesOptions(t *testing.T) {
+// TestClientCheckRelationHandlesOptions only verifies the handling of options,
+// so the setup is so that the actual check returns successful (i.e., "allowed").
+func TestClientCheckRelationOptions(t *testing.T) {
 	c := qt.New(t)
 	client := getTestClient(c)
 	ctx := context.Background()
@@ -445,6 +444,19 @@ func TestClientCheckRelationHandlesOptions(t *testing.T) {
 				}, func(c *qt.C) {
 					c.Assert(t[0].Before(t[1]), qt.IsTrue)
 					c.Assert(t[1].Before(t[2]), qt.IsTrue)
+				}
+		},
+	}, {
+		about: "EnableTrace correctly sets the trace option",
+		optionsAndAssertion: func() ([]ofga.CheckRelationOption, func(*qt.C)) {
+			var req *openfga.CheckRequest
+			return []ofga.CheckRelationOption{
+					func(cr *openfga.CheckRequest) {
+						req = cr
+						ofga.EnableTrace(cr)
+					},
+				}, func(c *qt.C) {
+					c.Assert(*req.Trace, qt.IsTrue)
 				}
 		},
 	}}
