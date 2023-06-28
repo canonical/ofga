@@ -407,6 +407,69 @@ func TestClientCheckRelation(t *testing.T) {
 	}
 }
 
+// TestClientCheckRelationHandlesOptions only verifies the correct handling of
+// options, so the setup is so that the actual check returns successful (i.e.,
+// "allowed").
+func TestClientCheckRelationHandlesOptions(t *testing.T) {
+	c := qt.New(t)
+	client := getTestClient(c)
+	ctx := context.Background()
+
+	mockRoutes := []*mockhttp.RouteResponder{{
+		Route:        CheckRoute,
+		MockResponse: openfga.CheckResponse{Allowed: openfga.PtrBool(true)},
+	}}
+
+	tuple := ofga.Tuple{
+		Object:   &entityTestUser,
+		Relation: relationEditor,
+		Target:   &entityTestContract,
+	}
+
+	tests := []struct {
+		about               string
+		optionsAndAssertion func() ([]ofga.CheckRelationOption, func(*qt.C))
+	}{{
+		about: "accepts empty",
+		optionsAndAssertion: func() ([]ofga.CheckRelationOption, func(*qt.C)) {
+			return nil, func(c *qt.C) {}
+		},
+	}, {
+		about: "applies all in the correct order",
+		optionsAndAssertion: func() ([]ofga.CheckRelationOption, func(*qt.C)) {
+			t := make([]time.Time, 3)
+			return []ofga.CheckRelationOption{
+					func(cr *openfga.CheckRequest) { t[0] = time.Now() },
+					func(cr *openfga.CheckRequest) { t[1] = time.Now() },
+					func(cr *openfga.CheckRequest) { t[2] = time.Now() },
+				}, func(c *qt.C) {
+					c.Assert(t[0].Before(t[1]), qt.IsTrue)
+					c.Assert(t[1].Before(t[2]), qt.IsTrue)
+				}
+		},
+	}}
+
+	for _, test := range tests {
+		test := test
+		c.Run(test.about, func(c *qt.C) {
+			// Set up and configure mock http responders.
+			httpmock.Activate()
+			defer httpmock.DeactivateAndReset()
+
+			for _, mr := range mockRoutes {
+				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
+			}
+
+			options, assertion := test.optionsAndAssertion()
+
+			// Execute the test.
+			_, err := client.CheckRelation(ctx, tuple, options...)
+			c.Assert(err, qt.IsNil)
+			assertion(c)
+		})
+	}
+}
+
 func TestClientRemoveRelation(t *testing.T) {
 	c := qt.New(t)
 
