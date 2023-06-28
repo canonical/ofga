@@ -152,9 +152,18 @@ func (c *Client) AddRelation(ctx context.Context, tuples ...Tuple) error {
 	return nil
 }
 
+type CheckRelationOption func(cr *openfga.CheckRequest)
+
+// EnableTrace enables tracing for the given check request.
+var EnableTrace CheckRelationOption = func(cr *openfga.CheckRequest) {
+	cr.SetTrace(true)
+}
+
 // CheckRelation verifies that the specified relation exists (either directly or
 // indirectly) between the object and the target as specified by the tuple.
-func (c *Client) CheckRelation(ctx context.Context, tuple Tuple) (bool, error) {
+// Caller can also provide an ordered list of option functions (e.g.,
+// `EnableTrace`) which will be applied in the same order.
+func (c *Client) CheckRelation(ctx context.Context, tuple Tuple, options ...CheckRelationOption) (bool, error) {
 	zapctx.Debug(
 		ctx,
 		"check request internal",
@@ -164,6 +173,10 @@ func (c *Client) CheckRelation(ctx context.Context, tuple Tuple) (bool, error) {
 	)
 	cr := openfga.NewCheckRequest(tuple.toOpenFGATuple())
 	cr.SetAuthorizationModelId(c.AuthModelId)
+
+	for _, option := range options {
+		option(cr)
+	}
 
 	checkResp, httpResp, err := c.api.Check(ctx).Body(*cr).Execute()
 	if err != nil {
