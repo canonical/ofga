@@ -436,14 +436,13 @@ func TestClientCheckRelationOptions(t *testing.T) {
 	}, {
 		about: "applies all in the correct order",
 		optionsAndAssertion: func() ([]ofga.CheckRelationOption, func(*qt.C)) {
-			t := make([]time.Time, 3)
+			t := make([]uint8, 0, 3)
 			return []ofga.CheckRelationOption{
-					func(cr *openfga.CheckRequest) { t[0] = time.Now() },
-					func(cr *openfga.CheckRequest) { t[1] = time.Now() },
-					func(cr *openfga.CheckRequest) { t[2] = time.Now() },
+					func(cr *openfga.CheckRequest) { t = append(t, 0) },
+					func(cr *openfga.CheckRequest) { t = append(t, 1) },
+					func(cr *openfga.CheckRequest) { t = append(t, 2) },
 				}, func(c *qt.C) {
-					c.Assert(t[0].Before(t[1]), qt.IsTrue)
-					c.Assert(t[1].Before(t[2]), qt.IsTrue)
+					c.Assert(t, qt.DeepEquals, []uint8{0, 1, 2})
 				}
 		},
 	}, {
