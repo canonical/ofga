@@ -453,7 +453,7 @@ func TestClientCheckRelationOptions(t *testing.T) {
 			return []ofga.CheckRelationOption{
 					func(cr *openfga.CheckRequest) {
 						req = cr
-						ofga.EnableTrace(cr)
+						ofga.EnableTrace(req)
 					},
 				}, func(c *qt.C) {
 					c.Assert(*req.Trace, qt.IsTrue)
