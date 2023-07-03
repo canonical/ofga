@@ -156,7 +156,7 @@ func (c *Client) AddRelation(ctx context.Context, tuples ...Tuple) error {
 // `CheckRelation` method. An option is a function that receives a pointer to
 // the `openfga.CheckRequest` struct instance which will be used for querying
 // the relation.
-type CheckRelationOption func(cr *openfga.CheckRequest)
+// CheckRelationOption is a functional option type for modifying CheckRequests.
 
 // EnableTrace enables tracing for the given check request.
 var EnableTrace CheckRelationOption = func(cr *openfga.CheckRequest) {
