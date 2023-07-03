@@ -420,28 +420,24 @@ func TestClientCheckRelationOptions(t *testing.T) {
 		Target:   &entityTestContract,
 	}
 
-	// Set up and configure mock http responders.
-	mockRoutes := []*mockhttp.RouteResponder{{
+	defaultMockRoutes := []*mockhttp.RouteResponder{{
 		Route:        CheckRoute,
 		MockResponse: openfga.CheckResponse{Allowed: openfga.PtrBool(true)},
 	}}
-	
-	httpmock.Activate()
-	defer httpmock.DeactivateAndReset()	
-	for _, mr := range mockRoutes {
-		httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-	}
 
 	tests := []struct {
 		about               string
+		mockRoutes          []*mockhttp.RouteResponder
 		optionsAndAssertion func() ([]ofga.CheckRelationOption, func(*qt.C))
 	}{{
-		about: "accepts empty",
+		about:      "accepts empty",
+		mockRoutes: defaultMockRoutes,
 		optionsAndAssertion: func() ([]ofga.CheckRelationOption, func(*qt.C)) {
 			return nil, func(c *qt.C) {}
 		},
 	}, {
-		about: "applies all in the correct order",
+		about:      "applies all in the correct order",
+		mockRoutes: defaultMockRoutes,
 		optionsAndAssertion: func() ([]ofga.CheckRelationOption, func(*qt.C)) {
 			t := make([]uint8, 0, 3)
 			return []ofga.CheckRelationOption{
@@ -454,28 +450,47 @@ func TestClientCheckRelationOptions(t *testing.T) {
 		},
 	}, {
 		about: "EnableTrace correctly sets the trace option",
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route:        CheckRoute,
+			MockResponse: openfga.CheckResponse{Allowed: openfga.PtrBool(true)},
+			ExpectedReqBody: openfga.CheckRequest{
+				TupleKey: openfga.TupleKey{
+					User:     openfga.PtrString(tuple.Object.String()),
+					Relation: openfga.PtrString(tuple.Relation.String()),
+					Object:   openfga.PtrString(tuple.Target.String()),
+				},
+				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
+				Trace:                openfga.PtrBool(true),
+			},
+		}},
 		optionsAndAssertion: func() ([]ofga.CheckRelationOption, func(*qt.C)) {
-			var req *openfga.CheckRequest
-			return []ofga.CheckRelationOption{
-					func(cr *openfga.CheckRequest) {
-						req = cr
-						ofga.EnableTrace(req)
-					},
-				}, func(c *qt.C) {
-					c.Assert(*req.Trace, qt.IsTrue)
-				}
+			return []ofga.CheckRelationOption{ofga.EnableTrace}, nil
 		},
 	}}
 
 	for _, test := range tests {
 		test := test
 		c.Run(test.about, func(c *qt.C) {
+			httpmock.Activate()
+			defer httpmock.DeactivateAndReset()
+			for _, mr := range test.mockRoutes {
+				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
+			}
+
 			options, assertion := test.optionsAndAssertion()
 
 			// Execute the test.
 			_, err := client.CheckRelation(ctx, tuple, options...)
 			c.Assert(err, qt.IsNil)
-			assertion(c)
+
+			if assertion != nil {
+				assertion(c)
+			}
+
+			// Validate that the mock routes were called as expected.
+			for _, mr := range test.mockRoutes {
+				mr.Finish(c)
+			}
 		})
 	}
 }
