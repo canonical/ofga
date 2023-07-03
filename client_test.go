@@ -414,15 +414,22 @@ func TestClientCheckRelationOptions(t *testing.T) {
 	client := getTestClient(c)
 	ctx := context.Background()
 
-	mockRoutes := []*mockhttp.RouteResponder{{
-		Route:        CheckRoute,
-		MockResponse: openfga.CheckResponse{Allowed: openfga.PtrBool(true)},
-	}}
-
 	tuple := ofga.Tuple{
 		Object:   &entityTestUser,
 		Relation: relationEditor,
 		Target:   &entityTestContract,
+	}
+
+	// Set up and configure mock http responders.
+	mockRoutes := []*mockhttp.RouteResponder{{
+		Route:        CheckRoute,
+		MockResponse: openfga.CheckResponse{Allowed: openfga.PtrBool(true)},
+	}}
+	
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()	
+	for _, mr := range mockRoutes {
+		httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
 	}
 
 	tests := []struct {
@@ -463,14 +470,6 @@ func TestClientCheckRelationOptions(t *testing.T) {
 	for _, test := range tests {
 		test := test
 		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-
-			for _, mr := range mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
-
 			options, assertion := test.optionsAndAssertion()
 
 			// Execute the test.
