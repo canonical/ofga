@@ -226,14 +226,14 @@ func TestParseEntity(t *testing.T) {
 			Relation: "member",
 		},
 	}, {
-		about:        "entity with Juju `user@domain` format is parsed correctly",
+		about:        "entity with special characters in ID is parsed correctly",
 		entityString: "user:some.user-name+suffix@some.domain-name+suffix",
 		expectedEntity: ofga.Entity{
 			Kind: "user",
 			ID:   "some.user-name+suffix@some.domain-name+suffix",
 		},
 	}, {
-		about:        "entity with Juju `user@domain` format and a relation is parsed correctly",
+		about:        "entity with special characters in ID and a relation is parsed correctly",
 		entityString: "user:some.user-name+suffix@some.domain-name+suffix#member",
 		expectedEntity: ofga.Entity{
 			Kind:     "user",
