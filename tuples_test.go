@@ -225,6 +225,21 @@ func TestParseEntity(t *testing.T) {
 			ID:       "canonical",
 			Relation: "member",
 		},
+	}, {
+		about:        "entity with special characters in ID is parsed correctly",
+		entityString: "user:some.user-name+suffix@some.domain-name+suffix",
+		expectedEntity: ofga.Entity{
+			Kind: "user",
+			ID:   "some.user-name+suffix@some.domain-name+suffix",
+		},
+	}, {
+		about:        "entity with special characters in ID and a relation is parsed correctly",
+		entityString: "user:some.user-name+suffix@some.domain-name+suffix#member",
+		expectedEntity: ofga.Entity{
+			Kind:     "user",
+			ID:       "some.user-name+suffix@some.domain-name+suffix",
+			Relation: "member",
+		},
 	}}
 
 	for _, test := range tests {

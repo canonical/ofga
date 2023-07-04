@@ -12,7 +12,7 @@ import (
 
 // entityRegex is used to validate that a string represents an Entity/EntitySet
 // and helps to convert from a string representation into an Entity struct.
-var entityRegex = regexp.MustCompile(`([A-za-z0-9_][A-za-z0-9_-]*):([A-za-z0-9_][A-za-z0-9_-]*)(#([A-za-z0-9_][A-za-z0-9_-]*))?`)
+var entityRegex = regexp.MustCompile(`([A-za-z0-9_][A-za-z0-9_-]*):([A-za-z0-9_][A-za-z0-9_@.+-]*)(#([A-za-z0-9_][A-za-z0-9_-]*))?`)
 
 // Kind represents the type of the entity in OpenFGA.
 type Kind string
