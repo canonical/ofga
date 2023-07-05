@@ -189,9 +189,7 @@ func (c *Client) checkRelation(ctx context.Context, tuple Tuple, trace bool, con
 		cr.SetContextualTuples(*openfga.NewContextualTupleKeys(keys))
 	}
 
-	if trace {
-		cr.SetTrace(true)
-	}
+	cr.SetTrace(trace)
 
 	checkResp, httpResp, err := c.api.Check(ctx).Body(*cr).Execute()
 	if err != nil {

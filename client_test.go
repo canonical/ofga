@@ -352,6 +352,7 @@ func TestClientCheckRelationMethods(t *testing.T) {
 					Object:   openfga.PtrString(entityTestContract.String()),
 				},
 				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
+				Trace:                openfga.PtrBool(false),
 			},
 			MockResponse: openfga.CheckResponse{
 				Allowed: openfga.PtrBool(true),
@@ -376,6 +377,7 @@ func TestClientCheckRelationMethods(t *testing.T) {
 					Object:   openfga.PtrString(entityTestContract.String()),
 				},
 				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
+				Trace:                openfga.PtrBool(false),
 			},
 			MockResponse: openfga.CheckResponse{
 				Allowed: openfga.PtrBool(false),
@@ -414,6 +416,7 @@ func TestClientCheckRelationMethods(t *testing.T) {
 						Object:   openfga.PtrString(entityTestContract.String()),
 					}},
 				},
+				Trace: openfga.PtrBool(false),
 			},
 			MockResponse: openfga.CheckResponse{
 				Allowed: openfga.PtrBool(false),
