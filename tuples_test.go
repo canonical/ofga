@@ -15,6 +15,7 @@ const relationEditor ofga.Relation = "editor"
 
 var (
 	entityTestUser     = ofga.Entity{Kind: "user", ID: "123"}
+	entityTestUser2    = ofga.Entity{Kind: "user2", ID: "456"}
 	entityTestContract = ofga.Entity{Kind: "contract", ID: "789"}
 	authModelJson      = []byte(`{
 	  "type_definitions": [

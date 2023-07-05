@@ -308,20 +308,23 @@ func TestClientAddRelation(t *testing.T) {
 	}
 }
 
-func TestClientCheckRelation(t *testing.T) {
+func TestClientCheckRelationMethods(t *testing.T) {
 	c := qt.New(t)
 
 	ctx := context.Background()
 	client := getTestClient(c)
 
 	tests := []struct {
-		about           string
-		tuple           ofga.Tuple
-		mockRoutes      []*mockhttp.RouteResponder
-		expectedAllowed bool
-		expectedErr     string
+		about            string
+		function         func(context.Context, ofga.Tuple, ...ofga.Tuple) (bool, error)
+		tuple            ofga.Tuple
+		contextualTuples []ofga.Tuple
+		mockRoutes       []*mockhttp.RouteResponder
+		expectedAllowed  bool
+		expectedErr      string
 	}{{
-		about: "error returned by the client is returned to the caller",
+		about:    "error returned by the client is returned to the caller",
+		function: client.CheckRelation,
 		tuple: ofga.Tuple{
 			Object:   &entityTestUser,
 			Relation: relationEditor,
@@ -333,7 +336,8 @@ func TestClientCheckRelation(t *testing.T) {
 		}},
 		expectedErr: "cannot check relation.*",
 	}, {
-		about: "relation checked successfully and allowed returned as true",
+		about:    "relation checked successfully and allowed returned as true",
+		function: client.CheckRelation,
 		tuple: ofga.Tuple{
 			Object:   &entityTestUser,
 			Relation: relationEditor,
@@ -355,7 +359,8 @@ func TestClientCheckRelation(t *testing.T) {
 		}},
 		expectedAllowed: true,
 	}, {
-		about: "relation checked successfully and allowed returned as false",
+		about:    "relation checked successfully and allowed returned as false",
+		function: client.CheckRelation,
 		tuple: ofga.Tuple{
 			Object:   &entityTestUser,
 			Relation: relationEditor,
@@ -377,6 +382,145 @@ func TestClientCheckRelation(t *testing.T) {
 			},
 		}},
 		expectedAllowed: false,
+	}, {
+		about:    "relation checked successfully with contextual tuples",
+		function: client.CheckRelation,
+		tuple: ofga.Tuple{
+			Object:   &entityTestUser,
+			Relation: relationEditor,
+			Target:   &entityTestContract,
+		},
+		contextualTuples: []ofga.Tuple{
+			{
+				Object:   &entityTestUser2,
+				Relation: relationEditor,
+				Target:   &entityTestContract,
+			},
+		},
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route:              CheckRoute,
+			ExpectedPathParams: []string{validFGAParams.StoreID},
+			ExpectedReqBody: openfga.CheckRequest{
+				TupleKey: openfga.TupleKey{
+					User:     openfga.PtrString(entityTestUser.String()),
+					Relation: openfga.PtrString(relationEditor.String()),
+					Object:   openfga.PtrString(entityTestContract.String()),
+				},
+				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
+				ContextualTuples: &openfga.ContextualTupleKeys{
+					TupleKeys: []openfga.TupleKey{{
+						User:     openfga.PtrString(entityTestUser2.String()),
+						Relation: openfga.PtrString(relationEditor.String()),
+						Object:   openfga.PtrString(entityTestContract.String()),
+					}},
+				},
+			},
+			MockResponse: openfga.CheckResponse{
+				Allowed: openfga.PtrBool(false),
+			},
+		}},
+		expectedAllowed: false,
+	}, {
+		about:    "error returned by the client is returned to the caller (with tracing)",
+		function: client.CheckRelationWithTracing,
+		tuple: ofga.Tuple{
+			Object:   &entityTestUser,
+			Relation: relationEditor,
+			Target:   &entityTestContract,
+		},
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route:              CheckRoute,
+			MockResponseStatus: http.StatusInternalServerError,
+		}},
+		expectedErr: "cannot check relation.*",
+	}, {
+		about:    "relation checked successfully and allowed returned as true (with tracing)",
+		function: client.CheckRelationWithTracing,
+		tuple: ofga.Tuple{
+			Object:   &entityTestUser,
+			Relation: relationEditor,
+			Target:   &entityTestContract,
+		},
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route: CheckRoute,
+			ExpectedReqBody: openfga.CheckRequest{
+				TupleKey: openfga.TupleKey{
+					User:     openfga.PtrString(entityTestUser.String()),
+					Relation: openfga.PtrString(relationEditor.String()),
+					Object:   openfga.PtrString(entityTestContract.String()),
+				},
+				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
+				Trace:                openfga.PtrBool(true),
+			},
+			MockResponse: openfga.CheckResponse{
+				Allowed: openfga.PtrBool(true),
+			},
+		}},
+		expectedAllowed: true,
+	}, {
+		about:    "relation checked successfully and allowed returned as false (with tracing)",
+		function: client.CheckRelationWithTracing,
+		tuple: ofga.Tuple{
+			Object:   &entityTestUser,
+			Relation: relationEditor,
+			Target:   &entityTestContract,
+		},
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route:              CheckRoute,
+			ExpectedPathParams: []string{validFGAParams.StoreID},
+			ExpectedReqBody: openfga.CheckRequest{
+				TupleKey: openfga.TupleKey{
+					User:     openfga.PtrString(entityTestUser.String()),
+					Relation: openfga.PtrString(relationEditor.String()),
+					Object:   openfga.PtrString(entityTestContract.String()),
+				},
+				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
+				Trace:                openfga.PtrBool(true),
+			},
+			MockResponse: openfga.CheckResponse{
+				Allowed: openfga.PtrBool(false),
+			},
+		}},
+		expectedAllowed: false,
+	}, {
+		about:    "relation checked successfully with contextual tuples (with tracing)",
+		function: client.CheckRelationWithTracing,
+		tuple: ofga.Tuple{
+			Object:   &entityTestUser,
+			Relation: relationEditor,
+			Target:   &entityTestContract,
+		},
+		contextualTuples: []ofga.Tuple{
+			{
+				Object:   &entityTestUser2,
+				Relation: relationEditor,
+				Target:   &entityTestContract,
+			},
+		},
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route:              CheckRoute,
+			ExpectedPathParams: []string{validFGAParams.StoreID},
+			ExpectedReqBody: openfga.CheckRequest{
+				TupleKey: openfga.TupleKey{
+					User:     openfga.PtrString(entityTestUser.String()),
+					Relation: openfga.PtrString(relationEditor.String()),
+					Object:   openfga.PtrString(entityTestContract.String()),
+				},
+				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
+				ContextualTuples: &openfga.ContextualTupleKeys{
+					TupleKeys: []openfga.TupleKey{{
+						User:     openfga.PtrString(entityTestUser2.String()),
+						Relation: openfga.PtrString(relationEditor.String()),
+						Object:   openfga.PtrString(entityTestContract.String()),
+					}},
+				},
+				Trace: openfga.PtrBool(true),
+			},
+			MockResponse: openfga.CheckResponse{
+				Allowed: openfga.PtrBool(false),
+			},
+		}},
+		expectedAllowed: false,
 	}}
 
 	for _, test := range tests {
@@ -390,7 +534,7 @@ func TestClientCheckRelation(t *testing.T) {
 			}
 
 			// Execute the test.
-			allowed, err := client.CheckRelation(ctx, test.tuple)
+			allowed, err := test.function(ctx, test.tuple, test.contextualTuples...)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
