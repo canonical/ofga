@@ -154,16 +154,42 @@ func (c *Client) AddRelation(ctx context.Context, tuples ...Tuple) error {
 
 // CheckRelation verifies that the specified relation exists (either directly or
 // indirectly) between the object and the target as specified by the tuple.
-func (c *Client) CheckRelation(ctx context.Context, tuple Tuple) (bool, error) {
+func (c *Client) CheckRelation(ctx context.Context, tuple Tuple, contextualTuples ...Tuple) (bool, error) {
+	return c.checkRelation(ctx, tuple, false, contextualTuples...)
+}
+
+// CheckRelation verifies that the specified relation exists (either directly or
+// indirectly) between the object and the target as specified by the tuple. This
+// also enables the tracing option.
+func (c *Client) CheckRelationWithTracing(ctx context.Context, tuple Tuple, contextualTuples ...Tuple) (bool, error) {
+	return c.checkRelation(ctx, tuple, true, contextualTuples...)
+}
+
+// checkRelation internal implementation for check relation procedure.
+func (c *Client) checkRelation(ctx context.Context, tuple Tuple, trace bool, contextualTuples ...Tuple) (bool, error) {
 	zapctx.Debug(
 		ctx,
 		"check request internal",
 		zap.String("tuple object", tuple.Object.String()),
 		zap.String("tuple relation", tuple.Relation.String()),
 		zap.String("tuple target object", tuple.Target.String()),
+		zap.Bool("trace", trace),
+		zap.Int("contextual tuples", len(contextualTuples)),
 	)
 	cr := openfga.NewCheckRequest(tuple.toOpenFGATuple())
 	cr.SetAuthorizationModelId(c.AuthModelId)
+
+	if len(contextualTuples) > 0 {
+		keys := make([]openfga.TupleKey, 0, len(contextualTuples))
+
+		for _, ct := range contextualTuples {
+			keys = append(keys, ct.toOpenFGATuple())
+		}
+
+		cr.SetContextualTuples(*openfga.NewContextualTupleKeys(keys))
+	}
+
+	cr.SetTrace(trace)
 
 	checkResp, httpResp, err := c.api.Check(ctx).Body(*cr).Execute()
 	if err != nil {
