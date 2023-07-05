@@ -158,6 +158,13 @@ func (c *Client) CheckRelation(ctx context.Context, tuple Tuple, contextualTuple
 	return c.checkRelation(ctx, tuple, false, contextualTuples...)
 }
 
+// CheckRelation verifies that the specified relation exists (either directly or
+// indirectly) between the object and the target as specified by the tuple. This
+// also enables the tracing option.
+func (c *Client) CheckRelationWithTracing(ctx context.Context, tuple Tuple, contextualTuples ...Tuple) (bool, error) {
+	return c.checkRelation(ctx, tuple, true, contextualTuples...)
+}
+
 // checkRelation internal implementation for check relation procedure.
 func (c *Client) checkRelation(ctx context.Context, tuple Tuple, trace bool, contextualTuples ...Tuple) (bool, error) {
 	zapctx.Debug(
