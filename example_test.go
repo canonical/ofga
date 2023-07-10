@@ -4,9 +4,24 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"testing"
 
 	"github.com/canonical/ofga"
 )
+
+var client *ofga.Client
+
+func TestMain(m *testing.M) {
+	client, _ = ofga.NewClient(context.Background(), ofga.OpenFGAParams{
+		Scheme:      os.Getenv("OPENFGA_API_SCHEME"), // defaults to `https` if not specified.
+		Host:        os.Getenv("OPENFGA_API_HOST"),
+		Port:        os.Getenv("OPENFGA_API_PORT"),
+		Token:       os.Getenv("SECRET_TOKEN"),          // Optional, based on the OpenFGA instance configuration.
+		StoreID:     os.Getenv("OPENFGA_STORE_ID"),      // Required only when connecting to a pre-existing store.
+		AuthModelID: os.Getenv("OPENFGA_AUTH_MODEL_ID"), // Required only when connecting to a pre-existing auth model.
+	})
+	os.Exit(m.Run())
+}
 
 func ExampleParseEntity() {
 	entity, err := ofga.ParseEntity("organization:canonical")
@@ -22,10 +37,8 @@ func ExampleParseEntity_relation() {
 	// {Kind:organization ID:canonical Relation:member} <nil>
 }
 
-func ExampleClient_AddRelation() {
-	// Initialize the client
-	ctx := context.Background()
-	client, err := ofga.NewClient(ctx, ofga.OpenFGAParams{
+func ExampleNewClient() {
+	client, err := ofga.NewClient(context.Background(), ofga.OpenFGAParams{
 		Scheme:      os.Getenv("OPENFGA_API_SCHEME"), // defaults to `https` if not specified.
 		Host:        os.Getenv("OPENFGA_API_HOST"),
 		Port:        os.Getenv("OPENFGA_API_PORT"),
@@ -37,9 +50,12 @@ func ExampleClient_AddRelation() {
 		// Handle err
 		return
 	}
+	fmt.Printf(client.AuthModelId)
+}
 
+func ExampleClient_AddRelation() {
 	// Add a relationship tuple
-	err = client.AddRelation(ctx, ofga.Tuple{
+	err := client.AddRelation(context.Background(), ofga.Tuple{
 		Object:   &ofga.Entity{Kind: "user", ID: "123"},
 		Relation: "editor",
 		Target:   &ofga.Entity{Kind: "document", ID: "ABC"},
@@ -51,23 +67,8 @@ func ExampleClient_AddRelation() {
 }
 
 func ExampleClient_AddRelation_multiple() {
-	// Initialize the client
-	ctx := context.Background()
-	client, err := ofga.NewClient(ctx, ofga.OpenFGAParams{
-		Scheme:      os.Getenv("OPENFGA_API_SCHEME"), // defaults to `https` if not specified.
-		Host:        os.Getenv("OPENFGA_API_HOST"),
-		Port:        os.Getenv("OPENFGA_API_PORT"),
-		Token:       os.Getenv("SECRET_TOKEN"),          // Optional, based on the OpenFGA instance configuration.
-		StoreID:     os.Getenv("OPENFGA_STORE_ID"),      // Required only when connecting to a pre-existing store.
-		AuthModelID: os.Getenv("OPENFGA_AUTH_MODEL_ID"), // Required only when connecting to a pre-existing auth model.
-	})
-	if err != nil {
-		// Handle err
-		return
-	}
-
 	// Add relationship tuples
-	err = client.AddRelation(ctx,
+	err := client.AddRelation(context.Background(),
 		ofga.Tuple{
 			Object:   &ofga.Entity{Kind: "user", ID: "123"},
 			Relation: "editor",
@@ -91,23 +92,8 @@ func ExampleClient_AddRelation_multiple() {
 }
 
 func ExampleClient_CheckRelation() {
-	// Initialize the client
-	ctx := context.Background()
-	client, err := ofga.NewClient(ctx, ofga.OpenFGAParams{
-		Scheme:      os.Getenv("OPENFGA_API_SCHEME"), // defaults to `https` if not specified.
-		Host:        os.Getenv("OPENFGA_API_HOST"),
-		Port:        os.Getenv("OPENFGA_API_PORT"),
-		Token:       os.Getenv("SECRET_TOKEN"),          // Optional, based on the OpenFGA instance configuration.
-		StoreID:     os.Getenv("OPENFGA_STORE_ID"),      // Required only when connecting to a pre-existing store.
-		AuthModelID: os.Getenv("OPENFGA_AUTH_MODEL_ID"), // Required only when connecting to a pre-existing auth model.
-	})
-	if err != nil {
-		// Handle err
-		return
-	}
-
 	// Check if the relation exists
-	allowed, err := client.CheckRelation(ctx, ofga.Tuple{
+	allowed, err := client.CheckRelation(context.Background(), ofga.Tuple{
 		Object:   &ofga.Entity{Kind: "user", ID: "123"},
 		Relation: "editor",
 		Target:   &ofga.Entity{Kind: "document", ID: "ABC"},
@@ -120,21 +106,6 @@ func ExampleClient_CheckRelation() {
 }
 
 func ExampleClient_CheckRelation_contextualTuples() {
-	// Initialize the client
-	ctx := context.Background()
-	client, err := ofga.NewClient(ctx, ofga.OpenFGAParams{
-		Scheme:      os.Getenv("OPENFGA_API_SCHEME"), // defaults to `https` if not specified.
-		Host:        os.Getenv("OPENFGA_API_HOST"),
-		Port:        os.Getenv("OPENFGA_API_PORT"),
-		Token:       os.Getenv("SECRET_TOKEN"),          // Optional, based on the OpenFGA instance configuration.
-		StoreID:     os.Getenv("OPENFGA_STORE_ID"),      // Required only when connecting to a pre-existing store.
-		AuthModelID: os.Getenv("OPENFGA_AUTH_MODEL_ID"), // Required only when connecting to a pre-existing auth model.
-	})
-	if err != nil {
-		// Handle err
-		return
-	}
-
 	contextualTuples := []ofga.Tuple{{
 		Object:   &ofga.Entity{Kind: "user", ID: "123"},
 		Relation: "editor",
@@ -142,7 +113,43 @@ func ExampleClient_CheckRelation_contextualTuples() {
 	}}
 
 	// Check if the relation exists
-	allowed, err := client.CheckRelation(ctx, ofga.Tuple{
+	allowed, err := client.CheckRelation(context.Background(), ofga.Tuple{
+		Object:   &ofga.Entity{Kind: "user", ID: "123"},
+		Relation: "editor",
+		Target:   &ofga.Entity{Kind: "document", ID: "ABC"},
+	},
+		contextualTuples...,
+	)
+	if err != nil {
+		// Handle err
+		return
+	}
+	fmt.Printf("allowed: %v", allowed)
+}
+
+func ExampleClient_CheckRelationWithTracing() {
+	// Check if the relation exists
+	allowed, err := client.CheckRelationWithTracing(context.Background(), ofga.Tuple{
+		Object:   &ofga.Entity{Kind: "user", ID: "123"},
+		Relation: "editor",
+		Target:   &ofga.Entity{Kind: "document", ID: "ABC"},
+	})
+	if err != nil {
+		// Handle err
+		return
+	}
+	fmt.Printf("allowed: %v", allowed)
+}
+
+func ExampleClient_CheckRelationWithTracing_contextualTuples() {
+	contextualTuples := []ofga.Tuple{{
+		Object:   &ofga.Entity{Kind: "user", ID: "123"},
+		Relation: "editor",
+		Target:   &ofga.Entity{Kind: "document", ID: "ABC"},
+	}}
+
+	// Check if the relation exists
+	allowed, err := client.CheckRelationWithTracing(context.Background(), ofga.Tuple{
 		Object:   &ofga.Entity{Kind: "user", ID: "123"},
 		Relation: "editor",
 		Target:   &ofga.Entity{Kind: "document", ID: "ABC"},
