@@ -1,3 +1,6 @@
+// Copyright 2023 Canonical Ltd.
+// Licensed under the AGPL license, see LICENSE file for details.
+
 // Strategy:
 // Due to the design of the underlying openfga client, there is no direct way
 // to test the integration of this wrapper library with the underlying client.

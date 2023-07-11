@@ -61,7 +61,21 @@ To quickly get started with ofga:
         // Handle error
     }
     ```
-
+5. Use the client to check for relations:
+    ```go
+    allowed, err = client.CheckRelation(ctx, ofga.Tuple{
+        Object:   &ofga.Entity{Kind: "user", ID: "123"},
+        Relation: "viewer",
+        Target:   &ofga.Entity{Kind: "document", ID: "ABC"},
+    })
+    if err != nil {
+        // Handle error
+    }
+    if !allowed {
+        // Permission denied
+    }
+    ... // Perform action
+    ```
 
 ## Documentation
 

@@ -1,4 +1,5 @@
 // Copyright 2023 Canonical Ltd.
+// Licensed under the AGPL license, see LICENSE file for details.
 
 package ofga_test
 

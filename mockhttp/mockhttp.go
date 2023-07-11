@@ -1,3 +1,6 @@
+// Copyright 2023 Canonical Ltd.
+// Licensed under the AGPL license, see LICENSE file for details.
+
 // Package mockhttp provides the ability to define mocked routes, specifying
 // request validations to be performed on incoming requests to these routes,
 // and mock responses to be returned for these requests.

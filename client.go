@@ -1,4 +1,5 @@
 // Copyright 2023 Canonical Ltd.
+// Licensed under the AGPL license, see LICENSE file for details.
 
 // Package ofga provides utilities for interacting with an OpenFGA instance.
 package ofga
@@ -297,7 +298,7 @@ func AuthModelFromJSON(data []byte) ([]openfga.TypeDefinition, error) {
 }
 
 // CreateAuthModel creates a new authorization model as per the provided type
-// definitions and returns its ID. The AuthModelFromJSON function can be used
+// definitions and returns its ID. The [AuthModelFromJSON] function can be used
 // to convert an authorization model from json to the slice of type definitions
 // required by this method.
 func (c *Client) CreateAuthModel(ctx context.Context, authModel []openfga.TypeDefinition) (string, error) {
