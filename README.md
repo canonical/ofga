@@ -2,26 +2,33 @@
 
 ofga is a wrapper library for conveniently interacting with OpenFGA instances.
 
-[OpenFGA](https://openfga.dev/) is an open-source Fine-Grained Authorization (FGA) solution that provides a framework
-and set of tools for implementing fine-grained access control and permission management in applications.
+[OpenFGA](https://openfga.dev/) is an open-source Fine-Grained Authorization
+(FGA) solution that provides a framework and set of tools for implementing
+fine-grained access control and permission management in applications.
 
-This Go library builds upon the default [OpenFGA client](https://github.com/openfga/go-sdk) by providing a more
-convenient and streamlined interface. It simplifies common interactions with OpenFGA instances, offering a cleaner and
-more intuitive API.
+This Go library builds upon the default
+[OpenFGA client](https://github.com/openfga/go-sdk) by providing a more
+convenient and streamlined interface. It simplifies common interactions with
+OpenFGA instances, offering an alternative API that implements a commonly-used
+set of opinionated operations.
 
 ## Why ofga?
 
-- **Convenience methods**: ofga provides a set of high-level convenience methods that abstract away the complexities of
-working directly with the OpenFGA client. This saves developers time and effort when performing common tasks.
-- **Structured representation**: ofga introduces a well-defined structure for representing relationship tuples within
-the OpenFGA system. This structured approach simplifies the management of relationship tuples and their associated
+- **Convenience methods**: ofga provides a set of high-level convenience methods
+that abstract away the complexities of working directly with the OpenFGA client.
+This saves developers time and effort when performing common tasks.
+- **Structured representation**: ofga introduces a well-defined structure for
+representing relationship tuples within the OpenFGA system. This structured
+approach simplifies the management of relationship tuples and their associated
 system entities within your application.
-- **Enhanced response format**: The library transforms certain responses returned by the underlying client into a more 
-usable format, improving data access and manipulation.
+- **Enhanced response format**: The library transforms certain responses
+returned by the underlying client, allowing for easier data access and 
+manipulation. One example is the Expand API, where the underlying client returns
+a tree-like response, while the library recursively expands this tree (upto the
+specified depth) to provide the actual set of users/usersets that possess the
+relevant permissions.
 
 ## Quickstart
-
-To quickly get started with ofga:
 
 1. Install the library using the following command:
     ```shell
@@ -50,7 +57,8 @@ To quickly get started with ofga:
         // Handle error
     }
     ```
-4. Use the client to interact with OpenFGA instances based on your requirements. For example:
+4. Use the client to interact with OpenFGA instances based on your requirements.
+For example:
     ```go
     err = client.AddRelation(ctx, ofga.Tuple{
         Object:   &ofga.Entity{Kind: "user", ID: "123"},
@@ -79,13 +87,14 @@ To quickly get started with ofga:
 
 ## Documentation
 
-The documentation for this package can be found on [pkg.go.dev](https://pkg.go.dev/github.com/canonical/ofga).
+The documentation for this package can be found on
+[pkg.go.dev](https://pkg.go.dev/github.com/canonical/ofga).
 
 
 ## Contributing
 
-If you encounter any issues or have suggestions for improvements, please open an issue on the
-[GitHub repository](https://github.com/canonical/ofga).
+If you encounter any issues or have suggestions for improvements, please open
+an issue on the [GitHub repository](https://github.com/canonical/ofga).
 
 
 ## Authors
