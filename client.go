@@ -1,5 +1,5 @@
 // Copyright 2023 Canonical Ltd.
-// Licensed under the AGPL license, see LICENSE file for details.
+// Licensed under the LGPL license, see LICENSE file for details.
 
 // Package ofga provides utilities for interacting with an OpenFGA instance.
 package ofga

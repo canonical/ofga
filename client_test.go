@@ -1,5 +1,5 @@
 // Copyright 2023 Canonical Ltd.
-// Licensed under the AGPL license, see LICENSE file for details.
+// Licensed under the LGPL license, see LICENSE file for details.
 
 // Strategy:
 // Due to the design of the underlying openfga client, there is no direct way
