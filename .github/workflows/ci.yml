@@ -17,6 +17,7 @@ jobs:
         uses: actions/setup-go@v3
         with:
           go-version: ${{ matrix.go-version }}
+          check-latest: true
           cache: true
       - name: Run Linters
         run: make lint
@@ -34,6 +35,7 @@ jobs:
         uses: actions/setup-go@v3
         with:
           go-version: ${{ matrix.go-version }}
+          check-latest: true
           cache: true
       - name: Run Unit tests
         run: make test

@@ -1,4 +1,5 @@
 // Copyright 2023 Canonical Ltd.
+// Licensed under the AGPL license, see LICENSE file for details.
 
 // Package ofga provides utilities for interacting with an OpenFGA instance.
 package ofga
@@ -158,9 +159,9 @@ func (c *Client) CheckRelation(ctx context.Context, tuple Tuple, contextualTuple
 	return c.checkRelation(ctx, tuple, false, contextualTuples...)
 }
 
-// CheckRelation verifies that the specified relation exists (either directly or
-// indirectly) between the object and the target as specified by the tuple. This
-// also enables the tracing option.
+// CheckRelationWithTracing verifies that the specified relation exists (either
+// directly or indirectly) between the object and the target as specified by
+// the tuple. This method also enables the tracing option.
 func (c *Client) CheckRelationWithTracing(ctx context.Context, tuple Tuple, contextualTuples ...Tuple) (bool, error) {
 	return c.checkRelation(ctx, tuple, true, contextualTuples...)
 }
@@ -297,7 +298,7 @@ func AuthModelFromJSON(data []byte) ([]openfga.TypeDefinition, error) {
 }
 
 // CreateAuthModel creates a new authorization model as per the provided type
-// definitions and returns its ID. The AuthModelFromJSON function can be used
+// definitions and returns its ID. The [AuthModelFromJSON] function can be used
 // to convert an authorization model from json to the slice of type definitions
 // required by this method.
 func (c *Client) CreateAuthModel(ctx context.Context, authModel []openfga.TypeDefinition) (string, error) {
