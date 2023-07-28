@@ -133,7 +133,7 @@ func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 }
 
 // AddRelation adds the specified relation(s) between the objects & targets as
-// specified by the given tuples.
+// specified by the given tuple(s).
 func (c *Client) AddRelation(ctx context.Context, tuples ...Tuple) error {
 	wr := openfga.NewWriteRequest()
 	wr.SetAuthorizationModelId(c.AuthModelId)
@@ -153,15 +153,27 @@ func (c *Client) AddRelation(ctx context.Context, tuples ...Tuple) error {
 	return nil
 }
 
-// CheckRelation verifies that the specified relation exists (either directly or
-// indirectly) between the object and the target as specified by the tuple.
+// CheckRelation checks whether the specified relation exists (either directly
+// or indirectly) between the object and the target specified by the tuple.
+//
+// Additionally, this method allows specifying contextualTuples to augment the
+// check request with temporary, non-persistent relationship tuples that exist
+// solely within the scope of this specific check. Contextual tuples are not
+// written to the store but are taken into account for this particular check
+// request as if they were present in the store.
 func (c *Client) CheckRelation(ctx context.Context, tuple Tuple, contextualTuples ...Tuple) (bool, error) {
 	return c.checkRelation(ctx, tuple, false, contextualTuples...)
 }
 
 // CheckRelationWithTracing verifies that the specified relation exists (either
 // directly or indirectly) between the object and the target as specified by
-// the tuple. This method also enables the tracing option.
+// the tuple. This method enables the tracing option.
+//
+// Additionally, this method allows specifying contextualTuples to augment the
+// check request with temporary, non-persistent relationship tuples that exist
+// solely within the scope of this specific check. Contextual tuples are not
+// written to the store but are taken into account for this particular check
+// request as if they were present in the store.
 func (c *Client) CheckRelationWithTracing(ctx context.Context, tuple Tuple, contextualTuples ...Tuple) (bool, error) {
 	return c.checkRelation(ctx, tuple, true, contextualTuples...)
 }
