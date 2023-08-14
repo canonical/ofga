@@ -289,7 +289,7 @@ func (c *Client) ReadChanges(ctx context.Context, entityType string, pageSize in
 }
 
 // AuthModelFromJSON converts the input json representation of an authorization
-// model into an [AuthModel] that can be used with the API.
+// model into an [openfga.AuthorizationModel] that can be used with the API.
 func AuthModelFromJSON(data []byte) (*openfga.AuthorizationModel, error) {
 	var parsed openfga.AuthorizationModel
 	if err := json.Unmarshal(data, &parsed); err != nil {
