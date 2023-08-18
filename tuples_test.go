@@ -69,34 +69,37 @@ var (
 	  ],
 	  "schema_version": "1.1"
 	}`)
-	authModel = []openfga.TypeDefinition{
-		{Type: "user", Relations: &map[string]openfga.Userset{}},
-		{
-			Type: "document",
-			Relations: &map[string]openfga.Userset{
-				"writer": {
-					This: &map[string]interface{}{},
-				},
-				"viewer": {Union: &openfga.Usersets{
-					Child: &[]openfga.Userset{
-						{This: &map[string]interface{}{}},
-						{ComputedUserset: &openfga.ObjectRelation{
-							Object:   openfga.PtrString(""),
-							Relation: openfga.PtrString("writer"),
-						}},
-					},
-				}},
-			},
-			Metadata: &openfga.Metadata{
-				Relations: &map[string]openfga.RelationMetadata{
+	authModel = openfga.AuthorizationModel{
+		SchemaVersion: "1.1",
+		TypeDefinitions: &[]openfga.TypeDefinition{
+			{Type: "user", Relations: &map[string]openfga.Userset{}},
+			{
+				Type: "document",
+				Relations: &map[string]openfga.Userset{
 					"writer": {
-						DirectlyRelatedUserTypes: &[]openfga.RelationReference{
-							{Type: "user"},
-						},
+						This: &map[string]interface{}{},
 					},
-					"viewer": {
-						DirectlyRelatedUserTypes: &[]openfga.RelationReference{
-							{Type: "user"},
+					"viewer": {Union: &openfga.Usersets{
+						Child: &[]openfga.Userset{
+							{This: &map[string]interface{}{}},
+							{ComputedUserset: &openfga.ObjectRelation{
+								Object:   openfga.PtrString(""),
+								Relation: openfga.PtrString("writer"),
+							}},
+						},
+					}},
+				},
+				Metadata: &openfga.Metadata{
+					Relations: &map[string]openfga.RelationMetadata{
+						"writer": {
+							DirectlyRelatedUserTypes: &[]openfga.RelationReference{
+								{Type: "user"},
+							},
+						},
+						"viewer": {
+							DirectlyRelatedUserTypes: &[]openfga.RelationReference{
+								{Type: "user"},
+							},
 						},
 					},
 				},

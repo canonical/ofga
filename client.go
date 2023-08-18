@@ -56,12 +56,6 @@ type Client struct {
 	AuthModelId string
 }
 
-// jsonAuthModel represents the structure of an authorization model contained
-// in a json string.
-type jsonAuthModel struct {
-	TypeDefinitions []openfga.TypeDefinition `json:"type_definitions"`
-}
-
 // NewClient returns a wrapped OpenFGA API client ensuring all calls are made
 // to the provided authorisation model (id) and returns what is necessary.
 func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
@@ -295,9 +289,9 @@ func (c *Client) ReadChanges(ctx context.Context, entityType string, pageSize in
 }
 
 // AuthModelFromJSON converts the input json representation of an authorization
-// model into a slice of TypeDefinitions that can be used with the API.
-func AuthModelFromJSON(data []byte) ([]openfga.TypeDefinition, error) {
-	var parsed jsonAuthModel
+// model into an [openfga.AuthorizationModel] that can be used with the API.
+func AuthModelFromJSON(data []byte) (*openfga.AuthorizationModel, error) {
+	var parsed openfga.AuthorizationModel
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		return nil, fmt.Errorf("cannot unmarshal JSON auth model: %v", err)
 	}
@@ -306,15 +300,16 @@ func AuthModelFromJSON(data []byte) ([]openfga.TypeDefinition, error) {
 		return nil, fmt.Errorf(`"type_definitions" field not found`)
 	}
 
-	return parsed.TypeDefinitions, nil
+	return &parsed, nil
 }
 
 // CreateAuthModel creates a new authorization model as per the provided type
-// definitions and returns its ID. The [AuthModelFromJSON] function can be used
-// to convert an authorization model from json to the slice of type definitions
-// required by this method.
-func (c *Client) CreateAuthModel(ctx context.Context, authModel []openfga.TypeDefinition) (string, error) {
-	ar := openfga.NewWriteAuthorizationModelRequest(authModel)
+// definitions and schemaVersion and returns its ID. The [AuthModelFromJSON]
+// function can be used to convert an authorization model from json to the
+// slice of type definitions required by this method.
+func (c *Client) CreateAuthModel(ctx context.Context, authModel *openfga.AuthorizationModel) (string, error) {
+	ar := openfga.NewWriteAuthorizationModelRequest(*authModel.TypeDefinitions)
+	ar.SetSchemaVersion(authModel.SchemaVersion)
 	resp, _, err := c.api.WriteAuthorizationModel(ctx).Body(*ar).Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot execute WriteAuthorizationModel request: %v", err))

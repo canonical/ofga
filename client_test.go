@@ -864,7 +864,7 @@ func TestAuthModelFromJson(t *testing.T) {
 	tests := []struct {
 		about             string
 		authModelJson     []byte
-		expectedAuthModel []openfga.TypeDefinition
+		expectedAuthModel *openfga.AuthorizationModel
 		expectedErr       string
 	}{{
 		about:         "conversion fails if input is not a valid json",
@@ -899,7 +899,7 @@ func TestAuthModelFromJson(t *testing.T) {
 	}, {
 		about:             "conversion is successful",
 		authModelJson:     authModelJson,
-		expectedAuthModel: authModel,
+		expectedAuthModel: &authModel,
 	}}
 
 	for _, test := range tests {
@@ -910,7 +910,7 @@ func TestAuthModelFromJson(t *testing.T) {
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
-				c.Assert(model, qt.DeepEquals, []openfga.TypeDefinition(nil))
+				c.Assert(model, qt.IsNil)
 			} else {
 				c.Assert(err, qt.IsNil)
 				c.Assert(model, qt.DeepEquals, test.expectedAuthModel)
@@ -927,13 +927,13 @@ func TestClientCreateAuthModel(t *testing.T) {
 
 	tests := []struct {
 		about               string
-		authModel           []openfga.TypeDefinition
+		authModel           *openfga.AuthorizationModel
 		mockRoutes          []*mockhttp.RouteResponder
 		expectedAuthModelID string
 		expectedErr         string
 	}{{
 		about:     "error returned by the client is returned to the caller",
-		authModel: authModel,
+		authModel: &authModel,
 		mockRoutes: []*mockhttp.RouteResponder{{
 			Route:              WriteAuthModelRoute,
 			MockResponseStatus: http.StatusInternalServerError,
@@ -941,12 +941,13 @@ func TestClientCreateAuthModel(t *testing.T) {
 		expectedErr: "cannot create auth model.*",
 	}, {
 		about:     "auth model is created successfully",
-		authModel: authModel,
+		authModel: &authModel,
 		mockRoutes: []*mockhttp.RouteResponder{{
 			Route:              WriteAuthModelRoute,
 			ExpectedPathParams: []string{validFGAParams.StoreID},
 			ExpectedReqBody: &openfga.WriteAuthorizationModelRequest{
-				TypeDefinitions: authModel,
+				TypeDefinitions: *authModel.TypeDefinitions,
+				SchemaVersion:   openfga.PtrString(authModel.SchemaVersion),
 			},
 			MockResponse: openfga.WriteAuthorizationModelResponse{AuthorizationModelId: openfga.PtrString("XYZ")},
 		}},
@@ -990,8 +991,8 @@ func TestClientListAuthModels(t *testing.T) {
 
 	authModelsResp := []openfga.AuthorizationModel{{
 		Id:              openfga.PtrString("12345"),
-		SchemaVersion:   "1.1",
-		TypeDefinitions: &authModel,
+		SchemaVersion:   authModel.SchemaVersion,
+		TypeDefinitions: authModel.TypeDefinitions,
 	}}
 
 	tests := []struct {
@@ -1067,8 +1068,8 @@ func TestClientGetAuthModel(t *testing.T) {
 
 	authModelResp := openfga.AuthorizationModel{
 		Id:              openfga.PtrString("12345"),
-		SchemaVersion:   "1.1",
-		TypeDefinitions: &authModel,
+		SchemaVersion:   authModel.SchemaVersion,
+		TypeDefinitions: authModel.TypeDefinitions,
 	}
 
 	tests := []struct {
