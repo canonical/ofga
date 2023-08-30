@@ -628,6 +628,93 @@ func TestClientRemoveRelation(t *testing.T) {
 	}
 }
 
+func TestClientModifyRelation(t *testing.T) {
+	c := qt.New(t)
+
+	ctx := context.Background()
+	client := getTestClient(c)
+
+	tests := []struct {
+		about        string
+		addTuples    []ofga.Tuple
+		removeTuples []ofga.Tuple
+		mockRoutes   []*mockhttp.RouteResponder
+		expectedErr  string
+	}{{
+		about: "error returned by the client is returned to the caller",
+		addTuples: []ofga.Tuple{{
+			Object:   &entityTestUser,
+			Relation: relationEditor,
+			Target:   &entityTestContract,
+		}},
+		removeTuples: []ofga.Tuple{{
+			Object:   &entityTestUser,
+			Relation: relationViewer,
+			Target:   &entityTestContract,
+		}},
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route:              WriteRoute,
+			MockResponseStatus: http.StatusInternalServerError,
+		}},
+		expectedErr: "cannot modify relations.*",
+	}, {
+		about: "relations added and removed successfully",
+		addTuples: []ofga.Tuple{{
+			Object:   &entityTestUser,
+			Relation: relationEditor,
+			Target:   &entityTestContract,
+		}},
+		removeTuples: []ofga.Tuple{{
+			Object:   &entityTestUser,
+			Relation: relationViewer,
+			Target:   &entityTestContract,
+		}},
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route:              WriteRoute,
+			ExpectedPathParams: []string{validFGAParams.StoreID},
+			ExpectedReqBody: openfga.WriteRequest{
+				Writes: openfga.NewTupleKeys([]openfga.TupleKey{{
+					User:     openfga.PtrString(entityTestUser.String()),
+					Relation: openfga.PtrString(relationEditor.String()),
+					Object:   openfga.PtrString(entityTestContract.String()),
+				}}),
+				Deletes: openfga.NewTupleKeys([]openfga.TupleKey{{
+					User:     openfga.PtrString(entityTestUser.String()),
+					Relation: openfga.PtrString(relationViewer.String()),
+					Object:   openfga.PtrString(entityTestContract.String()),
+				}}),
+				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
+			},
+		}},
+	}}
+
+	for _, test := range tests {
+		test := test
+		c.Run(test.about, func(c *qt.C) {
+			// Set up and configure mock http responders.
+			httpmock.Activate()
+			defer httpmock.DeactivateAndReset()
+			for _, mr := range test.mockRoutes {
+				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
+			}
+
+			// Execute the test.
+			err := client.ModifyRelations(ctx, test.addTuples, test.removeTuples)
+
+			if test.expectedErr != "" {
+				c.Assert(err, qt.ErrorMatches, test.expectedErr)
+			} else {
+				c.Assert(err, qt.IsNil)
+			}
+
+			// Validate that the mock routes were called as expected.
+			for _, mr := range test.mockRoutes {
+				mr.Finish(c)
+			}
+		})
+	}
+}
+
 func TestClientCreateStore(t *testing.T) {
 	c := qt.New(t)
 

@@ -12,7 +12,10 @@ import (
 	"github.com/canonical/ofga"
 )
 
-const relationEditor ofga.Relation = "editor"
+const (
+	relationEditor ofga.Relation = "editor"
+	relationViewer ofga.Relation = "viewer"
+)
 
 var (
 	entityTestUser     = ofga.Entity{Kind: "user", ID: "123"}

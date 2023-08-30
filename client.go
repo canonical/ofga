@@ -229,6 +229,36 @@ func (c *Client) RemoveRelation(ctx context.Context, tuples ...Tuple) error {
 	return nil
 }
 
+// ModifyRelations adds and removes the specified relation tuples in a single
+// atomic write operation. If you want to solely add relations or solely remove
+// relations, consider using the AddRelation or RemoveRelation methods instead.
+func (c *Client) ModifyRelations(ctx context.Context, addTuples, removeTuples []Tuple) error {
+	wr := openfga.NewWriteRequest()
+	wr.SetAuthorizationModelId(c.AuthModelId)
+
+	if len(addTuples) > 0 {
+		addTupleKeys := make([]openfga.TupleKey, len(addTuples))
+		for i, tuple := range addTuples {
+			addTupleKeys[i] = tuple.toOpenFGATuple()
+		}
+		wr.SetWrites(*openfga.NewTupleKeys(addTupleKeys))
+	}
+	if len(removeTuples) > 0 {
+		removeTupleKeys := make([]openfga.TupleKey, len(removeTuples))
+		for i, tuple := range removeTuples {
+			removeTupleKeys[i] = tuple.toOpenFGATuple()
+		}
+		wr.SetDeletes(*openfga.NewTupleKeys(removeTupleKeys))
+	}
+
+	_, _, err := c.api.Write(ctx).Body(*wr).Execute()
+	if err != nil {
+		zapctx.Error(ctx, fmt.Sprintf("cannot execute Write request: %v", err))
+		return fmt.Errorf("cannot modify relations: %v", err)
+	}
+	return nil
+}
+
 // CreateStore creates a new store on the openFGA instance and returns its ID.
 func (c *Client) CreateStore(ctx context.Context, name string) (string, error) {
 	csr := openfga.NewCreateStoreRequest(name)
