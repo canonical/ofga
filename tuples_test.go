@@ -12,7 +12,10 @@ import (
 	"github.com/canonical/ofga"
 )
 
-const relationEditor ofga.Relation = "editor"
+const (
+	relationEditor ofga.Relation = "editor"
+	relationViewer ofga.Relation = "viewer"
+)
 
 var (
 	entityTestUser     = ofga.Entity{Kind: "user", ID: "123"}
@@ -164,6 +167,52 @@ func TestToOpenFGATuple(t *testing.T) {
 
 			tupleKey := ofga.ToOpenFGATuple(&test.tuple)
 			c.Assert(tupleKey, qt.DeepEquals, test.expectedOpenFGATupleKey)
+		})
+	}
+}
+
+func TestTuplesToOpenFGATupleKeys(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		about                    string
+		tuples                   []ofga.Tuple
+		expectedOpenFGATupleKeys []openfga.TupleKey
+	}{{
+		about:                    "empty slice of tuples returns empty slice of tuple keys",
+		tuples:                   []ofga.Tuple{},
+		expectedOpenFGATupleKeys: []openfga.TupleKey{},
+	}, {
+		about: "tuples converted successfully",
+		tuples: []ofga.Tuple{{
+			Object:   &entityTestUser,
+			Relation: relationEditor,
+			Target:   &entityTestContract,
+		}, {
+			Relation: relationEditor,
+			Target:   &entityTestContract,
+		}, {
+			Target: &entityTestContract,
+		}},
+		expectedOpenFGATupleKeys: []openfga.TupleKey{{
+			User:     openfga.PtrString(entityTestUser.String()),
+			Relation: openfga.PtrString(relationEditor.String()),
+			Object:   openfga.PtrString(entityTestContract.String()),
+		}, {
+			Relation: openfga.PtrString(relationEditor.String()),
+			Object:   openfga.PtrString(entityTestContract.String()),
+		}, {
+			Object: openfga.PtrString(entityTestContract.String()),
+		}},
+	}}
+
+	for _, test := range tests {
+		test := test
+		c.Run(test.about, func(c *qt.C) {
+			c.Parallel()
+
+			tupleKeys := ofga.TuplesToOpenFGATupleKeys(test.tuples)
+			c.Assert(tupleKeys, qt.DeepEquals, test.expectedOpenFGATupleKeys)
 		})
 	}
 }

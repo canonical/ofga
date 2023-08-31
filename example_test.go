@@ -204,6 +204,26 @@ func ExampleClient_RemoveRelation_multiple() {
 	}
 }
 
+func ExampleClient_ModifyRelations() {
+	// Modify a user's relation with a document from viewer to editor.
+	addTuples := []ofga.Tuple{{
+		Object:   &ofga.Entity{Kind: "user", ID: "456"},
+		Relation: "editor",
+		Target:   &ofga.Entity{Kind: "document", ID: "ABC"},
+	}}
+	removeTuples := []ofga.Tuple{{
+		Object:   &ofga.Entity{Kind: "user", ID: "456"},
+		Relation: "viewer",
+		Target:   &ofga.Entity{Kind: "document", ID: "ABC"},
+	}}
+	// Add and remove tuples atomically.
+	err := client.ModifyRelations(context.Background(), addTuples, removeTuples)
+	if err != nil {
+		// Handle err
+		return
+	}
+}
+
 func ExampleClient_CreateStore() {
 	// Create a store named "Alpha"
 	storeID, err := client.CreateStore(context.Background(), "Alpha")

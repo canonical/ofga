@@ -132,11 +132,7 @@ func (c *Client) AddRelation(ctx context.Context, tuples ...Tuple) error {
 	wr := openfga.NewWriteRequest()
 	wr.SetAuthorizationModelId(c.AuthModelId)
 
-	tupleKeys := make([]openfga.TupleKey, len(tuples))
-	for i, tuple := range tuples {
-		tupleKeys[i] = tuple.toOpenFGATuple()
-	}
-
+	tupleKeys := tuplesToOpenFGATupleKeys(tuples)
 	keys := openfga.NewTupleKeys(tupleKeys)
 	wr.SetWrites(*keys)
 	_, _, err := c.api.Write(ctx).Body(*wr).Execute()
@@ -183,16 +179,11 @@ func (c *Client) checkRelation(ctx context.Context, tuple Tuple, trace bool, con
 		zap.Bool("trace", trace),
 		zap.Int("contextual tuples", len(contextualTuples)),
 	)
-	cr := openfga.NewCheckRequest(tuple.toOpenFGATuple())
+	cr := openfga.NewCheckRequest(tuple.toOpenFGATupleKey())
 	cr.SetAuthorizationModelId(c.AuthModelId)
 
 	if len(contextualTuples) > 0 {
-		keys := make([]openfga.TupleKey, 0, len(contextualTuples))
-
-		for _, ct := range contextualTuples {
-			keys = append(keys, ct.toOpenFGATuple())
-		}
-
+		keys := tuplesToOpenFGATupleKeys(contextualTuples)
 		cr.SetContextualTuples(*openfga.NewContextualTupleKeys(keys))
 	}
 
@@ -214,17 +205,36 @@ func (c *Client) RemoveRelation(ctx context.Context, tuples ...Tuple) error {
 	wr := openfga.NewWriteRequest()
 	wr.SetAuthorizationModelId(c.AuthModelId)
 
-	tupleKeys := make([]openfga.TupleKey, len(tuples))
-	for i, tuple := range tuples {
-		tupleKeys[i] = tuple.toOpenFGATuple()
-	}
-
+	tupleKeys := tuplesToOpenFGATupleKeys(tuples)
 	keys := openfga.NewTupleKeys(tupleKeys)
 	wr.SetDeletes(*keys)
 	_, _, err := c.api.Write(ctx).Body(*wr).Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot execute Write request: %v", err))
 		return fmt.Errorf("cannot remove relation: %v", err)
+	}
+	return nil
+}
+
+// ModifyRelations adds and removes the specified relation tuples in a single
+// atomic write operation. If you want to solely add relations or solely remove
+// relations, consider using the AddRelation or RemoveRelation methods instead.
+func (c *Client) ModifyRelations(ctx context.Context, addTuples, removeTuples []Tuple) error {
+	wr := openfga.NewWriteRequest()
+	wr.SetAuthorizationModelId(c.AuthModelId)
+
+	if len(addTuples) > 0 {
+		addTupleKeys := tuplesToOpenFGATupleKeys(addTuples)
+		wr.SetWrites(*openfga.NewTupleKeys(addTupleKeys))
+	}
+	if len(removeTuples) > 0 {
+		removeTupleKeys := tuplesToOpenFGATupleKeys(removeTuples)
+		wr.SetDeletes(*openfga.NewTupleKeys(removeTupleKeys))
+	}
+	_, _, err := c.api.Write(ctx).Body(*wr).Execute()
+	if err != nil {
+		zapctx.Error(ctx, fmt.Sprintf("cannot execute Write request: %v", err))
+		return fmt.Errorf("cannot modify relations: %v", err)
 	}
 	return nil
 }
@@ -394,7 +404,7 @@ func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize i
 		if err := validateTupleForFindMatchingTuples(tuple); err != nil {
 			return nil, "", fmt.Errorf("invalid tuple for FindMatchingTuples: %v", err)
 		}
-		rr.SetTupleKey(tuple.toOpenFGATuple())
+		rr.SetTupleKey(tuple.toOpenFGATupleKey())
 	}
 	if pageSize != 0 {
 		rr.SetPageSize(pageSize)
@@ -489,7 +499,7 @@ func (c *Client) findUsersByRelation(ctx context.Context, tuple Tuple, maxDepth 
 		}, nil
 	}
 
-	er := openfga.NewExpandRequest(tuple.toOpenFGATuple())
+	er := openfga.NewExpandRequest(tuple.toOpenFGATupleKey())
 	er.SetAuthorizationModelId(c.AuthModelId)
 	resp, _, err := c.api.Expand(ctx).Body(*er).Execute()
 	if err != nil {
@@ -690,12 +700,7 @@ func (c *Client) FindAccessibleObjectsByRelation(ctx context.Context, tuple Tupl
 	lor.SetType(tuple.Target.Kind.String())
 
 	if len(contextualTuples) > 0 {
-		keys := make([]openfga.TupleKey, 0, len(contextualTuples))
-
-		for _, ct := range contextualTuples {
-			keys = append(keys, ct.toOpenFGATuple())
-		}
-
+		keys := tuplesToOpenFGATupleKeys(contextualTuples)
 		lor.SetContextualTuples(*openfga.NewContextualTupleKeys(keys))
 	}
 

@@ -4,7 +4,8 @@
 package ofga
 
 var (
-	ToOpenFGATuple                                  = (*Tuple).toOpenFGATuple
+	ToOpenFGATuple                                  = (*Tuple).toOpenFGATupleKey
+	TuplesToOpenFGATupleKeys                        = tuplesToOpenFGATupleKeys
 	TupleIsEmpty                                    = (*Tuple).isEmpty
 	FromOpenFGATupleKey                             = fromOpenFGATupleKey
 	ValidateTupleForFindMatchingTuples              = validateTupleForFindMatchingTuples
