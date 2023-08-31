@@ -78,8 +78,8 @@ type Tuple struct {
 	Target   *Entity
 }
 
-// toOpenFGATuple converts our Tuple struct into an OpenFGA TupleKey.
-func (t Tuple) toOpenFGATuple() openfga.TupleKey {
+// toOpenFGATupleKey converts our Tuple struct into an OpenFGA TupleKey.
+func (t Tuple) toOpenFGATupleKey() openfga.TupleKey {
 	k := openfga.NewTupleKey()
 	// In some cases, specifying the object is not required.
 	if t.Object != nil {
@@ -115,6 +115,15 @@ func fromOpenFGATupleKey(key openfga.TupleKey) (Tuple, error) {
 		Relation: Relation(key.GetRelation()),
 		Target:   &object,
 	}, nil
+}
+
+// tuplesToOpenFGATupleKeys converts a slice of tuples into OpenFGA Tuple Keys.
+func tuplesToOpenFGATupleKeys(tuples []Tuple) []openfga.TupleKey {
+	keys := make([]openfga.TupleKey, len(tuples))
+	for i, tuple := range tuples {
+		keys[i] = tuple.toOpenFGATupleKey()
+	}
+	return keys
 }
 
 // isEmpty is a helper method to check whether a tuple is set to a non-empty

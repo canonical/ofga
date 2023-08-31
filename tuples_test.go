@@ -171,6 +171,52 @@ func TestToOpenFGATuple(t *testing.T) {
 	}
 }
 
+func TestTuplesToOpenFGATupleKeys(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		about                    string
+		tuples                   []ofga.Tuple
+		expectedOpenFGATupleKeys []openfga.TupleKey
+	}{{
+		about:                    "empty slice of tuples returns empty slice of tuple keys",
+		tuples:                   []ofga.Tuple{},
+		expectedOpenFGATupleKeys: []openfga.TupleKey{},
+	}, {
+		about: "tuples converted successfully",
+		tuples: []ofga.Tuple{{
+			Object:   &entityTestUser,
+			Relation: relationEditor,
+			Target:   &entityTestContract,
+		}, {
+			Relation: relationEditor,
+			Target:   &entityTestContract,
+		}, {
+			Target: &entityTestContract,
+		}},
+		expectedOpenFGATupleKeys: []openfga.TupleKey{{
+			User:     openfga.PtrString(entityTestUser.String()),
+			Relation: openfga.PtrString(relationEditor.String()),
+			Object:   openfga.PtrString(entityTestContract.String()),
+		}, {
+			Relation: openfga.PtrString(relationEditor.String()),
+			Object:   openfga.PtrString(entityTestContract.String()),
+		}, {
+			Object: openfga.PtrString(entityTestContract.String()),
+		}},
+	}}
+
+	for _, test := range tests {
+		test := test
+		c.Run(test.about, func(c *qt.C) {
+			c.Parallel()
+
+			tupleKeys := ofga.TuplesToOpenFGATupleKeys(test.tuples)
+			c.Assert(tupleKeys, qt.DeepEquals, test.expectedOpenFGATupleKeys)
+		})
+	}
+}
+
 func TestEntity_String(t *testing.T) {
 	c := qt.New(t)
 
