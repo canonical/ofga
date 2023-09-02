@@ -129,18 +129,7 @@ func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 // AddRelation adds the specified relation(s) between the objects & targets as
 // specified by the given tuple(s).
 func (c *Client) AddRelation(ctx context.Context, tuples ...Tuple) error {
-	wr := openfga.NewWriteRequest()
-	wr.SetAuthorizationModelId(c.AuthModelId)
-
-	tupleKeys := tuplesToOpenFGATupleKeys(tuples)
-	keys := openfga.NewTupleKeys(tupleKeys)
-	wr.SetWrites(*keys)
-	_, _, err := c.api.Write(ctx).Body(*wr).Execute()
-	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute Write request: %v", err))
-		return fmt.Errorf("cannot add relation: %v", err)
-	}
-	return nil
+	return c.AddRemoveRelations(ctx, tuples, nil)
 }
 
 // CheckRelation checks whether the specified relation exists (either directly
@@ -202,24 +191,13 @@ func (c *Client) checkRelation(ctx context.Context, tuple Tuple, trace bool, con
 // RemoveRelation removes the specified relation(s) between the objects &
 // targets as specified by the given tuples.
 func (c *Client) RemoveRelation(ctx context.Context, tuples ...Tuple) error {
-	wr := openfga.NewWriteRequest()
-	wr.SetAuthorizationModelId(c.AuthModelId)
-
-	tupleKeys := tuplesToOpenFGATupleKeys(tuples)
-	keys := openfga.NewTupleKeys(tupleKeys)
-	wr.SetDeletes(*keys)
-	_, _, err := c.api.Write(ctx).Body(*wr).Execute()
-	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute Write request: %v", err))
-		return fmt.Errorf("cannot remove relation: %v", err)
-	}
-	return nil
+	return c.AddRemoveRelations(ctx, nil, tuples)
 }
 
-// ModifyRelations adds and removes the specified relation tuples in a single
+// AddRemoveRelations adds and removes the specified relation tuples in a single
 // atomic write operation. If you want to solely add relations or solely remove
 // relations, consider using the AddRelation or RemoveRelation methods instead.
-func (c *Client) ModifyRelations(ctx context.Context, addTuples, removeTuples []Tuple) error {
+func (c *Client) AddRemoveRelations(ctx context.Context, addTuples, removeTuples []Tuple) error {
 	wr := openfga.NewWriteRequest()
 	wr.SetAuthorizationModelId(c.AuthModelId)
 
@@ -234,7 +212,7 @@ func (c *Client) ModifyRelations(ctx context.Context, addTuples, removeTuples []
 	_, _, err := c.api.Write(ctx).Body(*wr).Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot execute Write request: %v", err))
-		return fmt.Errorf("cannot modify relations: %v", err)
+		return fmt.Errorf("cannot add or remove relations: %v", err)
 	}
 	return nil
 }

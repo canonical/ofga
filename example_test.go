@@ -204,8 +204,9 @@ func ExampleClient_RemoveRelation_multiple() {
 	}
 }
 
-func ExampleClient_ModifyRelations() {
-	// Modify a user's relation with a document from viewer to editor.
+func ExampleClient_AddRemoveRelations() {
+	// Add and remove tuples to modify a user's relation with a document
+	// from viewer to editor.
 	addTuples := []ofga.Tuple{{
 		Object:   &ofga.Entity{Kind: "user", ID: "456"},
 		Relation: "editor",
@@ -217,7 +218,7 @@ func ExampleClient_ModifyRelations() {
 		Target:   &ofga.Entity{Kind: "document", ID: "ABC"},
 	}}
 	// Add and remove tuples atomically.
-	err := client.ModifyRelations(context.Background(), addTuples, removeTuples)
+	err := client.AddRemoveRelations(context.Background(), addTuples, removeTuples)
 	if err != nil {
 		// Handle err
 		return

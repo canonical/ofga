@@ -260,7 +260,7 @@ func TestClientAddRelation(t *testing.T) {
 			Route:              WriteRoute,
 			MockResponseStatus: http.StatusBadRequest,
 		}},
-		expectedErr: "cannot add relation.*",
+		expectedErr: "cannot add or remove relations.*",
 	}, {
 		about: "relation added successfully",
 		tuples: []ofga.Tuple{
@@ -579,7 +579,7 @@ func TestClientRemoveRelation(t *testing.T) {
 			Route:              WriteRoute,
 			MockResponseStatus: http.StatusInternalServerError,
 		}},
-		expectedErr: "cannot remove relation.*",
+		expectedErr: "cannot add or remove relation.*",
 	}, {
 		about: "relation removed successfully",
 		tuples: []ofga.Tuple{{
@@ -628,7 +628,7 @@ func TestClientRemoveRelation(t *testing.T) {
 	}
 }
 
-func TestClientModifyRelation(t *testing.T) {
+func TestClientAddRemoveRelations(t *testing.T) {
 	c := qt.New(t)
 
 	ctx := context.Background()
@@ -656,7 +656,7 @@ func TestClientModifyRelation(t *testing.T) {
 			Route:              WriteRoute,
 			MockResponseStatus: http.StatusInternalServerError,
 		}},
-		expectedErr: "cannot modify relations.*",
+		expectedErr: "cannot add or remove relations.*",
 	}, {
 		about: "relations added and removed successfully",
 		addTuples: []ofga.Tuple{{
@@ -699,7 +699,7 @@ func TestClientModifyRelation(t *testing.T) {
 			}
 
 			// Execute the test.
-			err := client.ModifyRelations(ctx, test.addTuples, test.removeTuples)
+			err := client.AddRemoveRelations(ctx, test.addTuples, test.removeTuples)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
