@@ -165,7 +165,7 @@ func TestToOpenFGATuple(t *testing.T) {
 		c.Run(test.about, func(c *qt.C) {
 			c.Parallel()
 
-			tupleKey := ofga.ToOpenFGATuple(&test.tuple)
+			tupleKey := test.tuple.ToOpenFGATupleKey()
 			c.Assert(tupleKey, qt.DeepEquals, test.expectedOpenFGATupleKey)
 		})
 	}
