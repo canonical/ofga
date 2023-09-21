@@ -168,7 +168,7 @@ func (c *Client) checkRelation(ctx context.Context, tuple Tuple, trace bool, con
 		zap.Bool("trace", trace),
 		zap.Int("contextual tuples", len(contextualTuples)),
 	)
-	cr := openfga.NewCheckRequest(tuple.toOpenFGATupleKey())
+	cr := openfga.NewCheckRequest(tuple.ToOpenFGATupleKey())
 	cr.SetAuthorizationModelId(c.AuthModelId)
 
 	if len(contextualTuples) > 0 {
@@ -382,7 +382,7 @@ func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize i
 		if err := validateTupleForFindMatchingTuples(tuple); err != nil {
 			return nil, "", fmt.Errorf("invalid tuple for FindMatchingTuples: %v", err)
 		}
-		rr.SetTupleKey(tuple.toOpenFGATupleKey())
+		rr.SetTupleKey(tuple.ToOpenFGATupleKey())
 	}
 	if pageSize != 0 {
 		rr.SetPageSize(pageSize)
@@ -397,7 +397,7 @@ func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize i
 	}
 	tuples := make([]TimestampedTuple, 0, len(resp.GetTuples()))
 	for _, oTuple := range resp.GetTuples() {
-		t, err := fromOpenFGATupleKey(*oTuple.Key)
+		t, err := FromOpenFGATupleKey(*oTuple.Key)
 		if err != nil {
 			zapctx.Error(ctx, fmt.Sprintf("cannot parse tuple from Read response: %v", err))
 			return nil, "", fmt.Errorf("cannot parse tuple %+v, %v", oTuple, err)
@@ -477,7 +477,7 @@ func (c *Client) findUsersByRelation(ctx context.Context, tuple Tuple, maxDepth 
 		}, nil
 	}
 
-	er := openfga.NewExpandRequest(tuple.toOpenFGATupleKey())
+	er := openfga.NewExpandRequest(tuple.ToOpenFGATupleKey())
 	er.SetAuthorizationModelId(c.AuthModelId)
 	resp, _, err := c.api.Expand(ctx).Body(*er).Execute()
 	if err != nil {
@@ -615,7 +615,7 @@ func (c *Client) expand(ctx context.Context, maxDepth int, userStrings ...string
 			t := openfga.NewTupleKey()
 			t.SetRelation(tokens[1])
 			t.SetObject(tokens[0])
-			tuple, err := fromOpenFGATupleKey(*t)
+			tuple, err := FromOpenFGATupleKey(*t)
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse tuple %s, %v", u, err)
 			}
