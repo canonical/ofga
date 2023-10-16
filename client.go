@@ -53,7 +53,7 @@ type OpenFgaApi interface {
 // Store and AuthorizationModel if such IDs are provided during configuration.
 type Client struct {
 	api         OpenFgaApi
-	authModelId string
+	authModelID string
 	getStoreID  func() string
 	setStoreID  func(storeID string)
 }
@@ -124,24 +124,24 @@ func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 	}
 	return &Client{
 		api:         api,
-		authModelId: p.AuthModelID,
+		authModelID: p.AuthModelID,
 		getStoreID:  client.GetStoreId,
 		setStoreID:  client.SetStoreId,
 	}, nil
 }
 
-// GetAuthModelID gets the currently configured authorization model ID.
-func (c *Client) GetAuthModelID() string {
-	return c.authModelId
+// AuthModelID returns the currently configured authorization model ID.
+func (c *Client) AuthModelID() string {
+	return c.authModelID
 }
 
 // SetAuthModelID sets the authorization model ID to be used by the client.
 func (c *Client) SetAuthModelID(authModelID string) {
-	c.authModelId = authModelID
+	c.authModelID = authModelID
 }
 
-// GetStoreID gets the currently configured store ID.
-func (c *Client) GetStoreID() string {
+// StoreID gets the currently configured store ID.
+func (c *Client) StoreID() string {
 	return c.getStoreID()
 }
 
@@ -193,7 +193,7 @@ func (c *Client) checkRelation(ctx context.Context, tuple Tuple, trace bool, con
 		zap.Int("contextual tuples", len(contextualTuples)),
 	)
 	cr := openfga.NewCheckRequest(tuple.ToOpenFGATupleKey())
-	cr.SetAuthorizationModelId(c.authModelId)
+	cr.SetAuthorizationModelId(c.authModelID)
 
 	if len(contextualTuples) > 0 {
 		keys := tuplesToOpenFGATupleKeys(contextualTuples)
@@ -223,7 +223,7 @@ func (c *Client) RemoveRelation(ctx context.Context, tuples ...Tuple) error {
 // relations, consider using the AddRelation or RemoveRelation methods instead.
 func (c *Client) AddRemoveRelations(ctx context.Context, addTuples, removeTuples []Tuple) error {
 	wr := openfga.NewWriteRequest()
-	wr.SetAuthorizationModelId(c.authModelId)
+	wr.SetAuthorizationModelId(c.authModelID)
 
 	if len(addTuples) > 0 {
 		addTupleKeys := tuplesToOpenFGATupleKeys(addTuples)
@@ -502,7 +502,7 @@ func (c *Client) findUsersByRelation(ctx context.Context, tuple Tuple, maxDepth 
 	}
 
 	er := openfga.NewExpandRequest(tuple.ToOpenFGATupleKey())
-	er.SetAuthorizationModelId(c.authModelId)
+	er.SetAuthorizationModelId(c.authModelID)
 	resp, _, err := c.api.Expand(ctx).Body(*er).Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot execute Expand request: %v", err))
@@ -696,7 +696,7 @@ func (c *Client) FindAccessibleObjectsByRelation(ctx context.Context, tuple Tupl
 	}
 
 	lor := openfga.NewListObjectsRequestWithDefaults()
-	lor.SetAuthorizationModelId(c.authModelId)
+	lor.SetAuthorizationModelId(c.authModelID)
 	lor.SetUser(tuple.Object.String())
 	lor.SetRelation(tuple.Relation.String())
 	lor.SetType(tuple.Target.Kind.String())

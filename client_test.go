@@ -93,7 +93,7 @@ func getTestClient(c *qt.C) *ofga.Client {
 	// Create a client.
 	newClient, err := ofga.NewClient(context.Background(), validFGAParams)
 	c.Assert(err, qt.IsNil)
-	c.Assert(newClient.GetAuthModelID(), qt.Equals, validFGAParams.AuthModelID)
+	c.Assert(newClient.AuthModelID(), qt.Equals, validFGAParams.AuthModelID)
 
 	for _, cr := range clientCreationRoutes {
 		cr.Finish(c)
@@ -225,7 +225,7 @@ func TestNewClient(t *testing.T) {
 				c.Assert(client, qt.IsNil)
 			} else {
 				c.Assert(err, qt.IsNil)
-				c.Assert(client.GetAuthModelID(), qt.Equals, test.expectedAuthModelID)
+				c.Assert(client.AuthModelID(), qt.Equals, test.expectedAuthModelID)
 			}
 
 			// Validate that the mock routes were called as expected.
@@ -352,11 +352,11 @@ func TestClientUpdateStoreIDAndAuthModelID(t *testing.T) {
 			// Execute the test.
 			if test.updateStoreID != "" {
 				client.SetStoreID(test.updateStoreID)
-				c.Assert(client.GetStoreID(), qt.Equals, test.updateStoreID)
+				c.Assert(client.StoreID(), qt.Equals, test.updateStoreID)
 			}
 			if test.updateAuthModelID != "" {
 				client.SetAuthModelID(test.updateAuthModelID)
-				c.Assert(client.GetAuthModelID(), qt.Equals, test.updateAuthModelID)
+				c.Assert(client.AuthModelID(), qt.Equals, test.updateAuthModelID)
 			}
 			err := client.AddRelation(ctx, test.tuples...)
 			c.Assert(err, qt.IsNil)
