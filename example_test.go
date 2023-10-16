@@ -53,7 +53,7 @@ func ExampleNewClient() {
 		// Handle err
 		return
 	}
-	fmt.Printf(client.AuthModelId)
+	fmt.Print(client.GetAuthModelID())
 }
 
 func ExampleClient_AddRelation() {
