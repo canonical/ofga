@@ -93,7 +93,7 @@ func getTestClient(c *qt.C) *ofga.Client {
 	// Create a client.
 	newClient, err := ofga.NewClient(context.Background(), validFGAParams)
 	c.Assert(err, qt.IsNil)
-	c.Assert(newClient.AuthModelId, qt.Equals, validFGAParams.AuthModelID)
+	c.Assert(newClient.AuthModelID(), qt.Equals, validFGAParams.AuthModelID)
 
 	for _, cr := range clientCreationRoutes {
 		cr.Finish(c)
@@ -225,8 +225,141 @@ func TestNewClient(t *testing.T) {
 				c.Assert(client, qt.IsNil)
 			} else {
 				c.Assert(err, qt.IsNil)
-				c.Assert(client.AuthModelId, qt.Equals, test.expectedAuthModelID)
+				c.Assert(client.AuthModelID(), qt.Equals, test.expectedAuthModelID)
 			}
+
+			// Validate that the mock routes were called as expected.
+			for _, mr := range test.mockRoutes {
+				mr.Finish(c)
+			}
+		})
+	}
+}
+
+func TestClientUpdateStoreIDAndAuthModelID(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+
+	tests := []struct {
+		about string
+
+		mockRoutes []*mockhttp.RouteResponder
+
+		tuples            []ofga.Tuple
+		updateStoreID     string
+		updateAuthModelID string
+	}{{
+		about: "success: no configuration change",
+		tuples: []ofga.Tuple{
+			{
+				Object:   &entityTestUser,
+				Relation: relationEditor,
+				Target:   &entityTestContract,
+			},
+		},
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route:              WriteRoute,
+			ExpectedPathParams: []string{validFGAParams.StoreID},
+			ExpectedReqBody: openfga.WriteRequest{
+				Writes: openfga.NewTupleKeys([]openfga.TupleKey{{
+					User:     openfga.PtrString(entityTestUser.String()),
+					Relation: openfga.PtrString(relationEditor.String()),
+					Object:   openfga.PtrString(entityTestContract.String()),
+				}}),
+				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
+			},
+		}},
+	}, {
+		about:         "success: storeID changed",
+		updateStoreID: "AnotherStoreID",
+		tuples: []ofga.Tuple{
+			{
+				Object:   &entityTestUser,
+				Relation: relationEditor,
+				Target:   &entityTestContract,
+			},
+		},
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route:              WriteRoute,
+			ExpectedPathParams: []string{"AnotherStoreID"},
+			ExpectedReqBody: openfga.WriteRequest{
+				Writes: openfga.NewTupleKeys([]openfga.TupleKey{{
+					User:     openfga.PtrString(entityTestUser.String()),
+					Relation: openfga.PtrString(relationEditor.String()),
+					Object:   openfga.PtrString(entityTestContract.String()),
+				}}),
+				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
+			},
+		}},
+	}, {
+		about:             "success: authModelID changed",
+		updateAuthModelID: "AuthModel3000",
+		tuples: []ofga.Tuple{
+			{
+				Object:   &entityTestUser,
+				Relation: relationEditor,
+				Target:   &entityTestContract,
+			},
+		},
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route:              WriteRoute,
+			ExpectedPathParams: []string{validFGAParams.StoreID},
+			ExpectedReqBody: openfga.WriteRequest{
+				Writes: openfga.NewTupleKeys([]openfga.TupleKey{{
+					User:     openfga.PtrString(entityTestUser.String()),
+					Relation: openfga.PtrString(relationEditor.String()),
+					Object:   openfga.PtrString(entityTestContract.String()),
+				}}),
+				AuthorizationModelId: openfga.PtrString("AuthModel3000"),
+			},
+		}},
+	}, {
+		about:             "success: storeID and authModelID changed",
+		updateStoreID:     "AnotherStoreID",
+		updateAuthModelID: "AuthModel3000",
+		tuples: []ofga.Tuple{
+			{
+				Object:   &entityTestUser,
+				Relation: relationEditor,
+				Target:   &entityTestContract,
+			},
+		},
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route:              WriteRoute,
+			ExpectedPathParams: []string{"AnotherStoreID"},
+			ExpectedReqBody: openfga.WriteRequest{
+				Writes: openfga.NewTupleKeys([]openfga.TupleKey{{
+					User:     openfga.PtrString(entityTestUser.String()),
+					Relation: openfga.PtrString(relationEditor.String()),
+					Object:   openfga.PtrString(entityTestContract.String()),
+				}}),
+				AuthorizationModelId: openfga.PtrString("AuthModel3000"),
+			},
+		}},
+	}}
+	for _, test := range tests {
+		test := test
+		c.Run(test.about, func(c *qt.C) {
+			client := getTestClient(c)
+
+			// Set up and configure mock http responders.
+			httpmock.Activate()
+			defer httpmock.DeactivateAndReset()
+			for _, mr := range test.mockRoutes {
+				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
+			}
+
+			// Execute the test.
+			if test.updateStoreID != "" {
+				client.SetStoreID(test.updateStoreID)
+				c.Assert(client.StoreID(), qt.Equals, test.updateStoreID)
+			}
+			if test.updateAuthModelID != "" {
+				client.SetAuthModelID(test.updateAuthModelID)
+				c.Assert(client.AuthModelID(), qt.Equals, test.updateAuthModelID)
+			}
+			err := client.AddRelation(ctx, test.tuples...)
+			c.Assert(err, qt.IsNil)
 
 			// Validate that the mock routes were called as expected.
 			for _, mr := range test.mockRoutes {
