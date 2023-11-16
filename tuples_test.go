@@ -20,6 +20,7 @@ const (
 var (
 	entityTestUser     = ofga.Entity{Kind: "user", ID: "123"}
 	entityTestUser2    = ofga.Entity{Kind: "user2", ID: "456"}
+	publicEntityUser   = ofga.Entity{Kind: "user", ID: "*"}
 	entityTestContract = ofga.Entity{Kind: "contract", ID: "789"}
 	authModelJson      = []byte(`{
 	  "type_definitions": [
@@ -292,6 +293,22 @@ func TestParseEntity(t *testing.T) {
 		expectedEntity: ofga.Entity{
 			Kind:     "user",
 			ID:       "some.user-name+suffix@some.domain-name+suffix",
+			Relation: "member",
+		},
+	}, {
+		about:        "wildcard entity is parsed correctly",
+		entityString: "user:*",
+		expectedEntity: ofga.Entity{
+			Kind:     "user",
+			ID:       "*",
+			Relation: "",
+		},
+	}, {
+		about:        "wildcard entity with relation is parsed correctly",
+		entityString: "user:*#member",
+		expectedEntity: ofga.Entity{
+			Kind:     "user",
+			ID:       "*",
 			Relation: "member",
 		},
 	}}
