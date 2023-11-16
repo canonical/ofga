@@ -415,6 +415,27 @@ func TestClientAddRelation(t *testing.T) {
 				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
 			},
 		}},
+	}, {
+		about: "wildcard relation added successfully",
+		tuples: []ofga.Tuple{
+			{
+				Object:   &publicEntityUser,
+				Relation: relationEditor,
+				Target:   &entityTestContract,
+			},
+		},
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route:              WriteRoute,
+			ExpectedPathParams: []string{validFGAParams.StoreID},
+			ExpectedReqBody: openfga.WriteRequest{
+				Writes: openfga.NewTupleKeys([]openfga.TupleKey{{
+					User:     openfga.PtrString(publicEntityUser.String()),
+					Relation: openfga.PtrString(relationEditor.String()),
+					Object:   openfga.PtrString(entityTestContract.String()),
+				}}),
+				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
+			},
+		}},
 	}}
 
 	for _, test := range tests {

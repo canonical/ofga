@@ -13,7 +13,7 @@ import (
 
 // entityRegex is used to validate that a string represents an Entity/EntitySet
 // and helps to convert from a string representation into an Entity struct.
-var entityRegex = regexp.MustCompile(`([A-za-z0-9_][A-za-z0-9_-]*):([A-za-z0-9_][A-za-z0-9_@.+-]*)(#([A-za-z0-9_][A-za-z0-9_-]*))?`)
+var entityRegex = regexp.MustCompile(`([A-Za-z0-9_][A-Za-z0-9_-]*):([A-Za-z0-9_][A-Za-z0-9_@.+-]*|[*])(#([A-Za-z0-9_][A-Za-z0-9_-]*))?$`)
 
 // Kind represents the type of the entity in OpenFGA.
 type Kind string
@@ -37,6 +37,11 @@ type Entity struct {
 	Kind     Kind
 	ID       string
 	Relation Relation
+}
+
+// IsPublicAccess returns true when the entity ID is the * wildcard, representing any entity.
+func (t Entity) IsPublicAccess() bool {
+	return t.ID == "*"
 }
 
 // String returns a string representation of the entity/entity-set.
