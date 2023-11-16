@@ -311,6 +311,10 @@ func TestParseEntity(t *testing.T) {
 			ID:       "*",
 			Relation: "member",
 		},
+	}, {
+		about:        "wildcard entity with extra characters raises an error",
+		entityString: "user:*foo",
+		expectedErr:  "invalid entity representation.*",
 	}}
 
 	for _, test := range tests {
