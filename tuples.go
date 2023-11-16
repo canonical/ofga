@@ -39,6 +39,7 @@ type Entity struct {
 	Relation Relation
 }
 
+// IsPublicAccess returns true when the entity ID is the * wildcard, representing any entity.
 func (t Entity) IsPublicAccess() bool {
 	return t.ID == "*"
 }
