@@ -218,7 +218,7 @@ func TestTuplesToOpenFGATupleKeys(t *testing.T) {
 	}
 }
 
-func TestEntity_String(t *testing.T) {
+func TestEntityString(t *testing.T) {
 	c := qt.New(t)
 
 	tests := []struct {
@@ -249,6 +249,40 @@ func TestEntity_String(t *testing.T) {
 
 			s := test.entity.String()
 			c.Assert(s, qt.DeepEquals, test.expectedString)
+		})
+	}
+}
+
+func TestEntityIsPublicAccess(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		about                  string
+		entity                 ofga.Entity
+		expectedIsPublicAccess bool
+	}{{
+		about: "non public access entity is identified correctly",
+		entity: ofga.Entity{
+			Kind: "user",
+			ID:   "123",
+		},
+		expectedIsPublicAccess: false,
+	}, {
+		about: "non public access entity is identified correctly",
+		entity: ofga.Entity{
+			Kind: "user",
+			ID:   "*",
+		},
+		expectedIsPublicAccess: true,
+	}}
+
+	for _, test := range tests {
+		test := test
+		c.Run(test.about, func(c *qt.C) {
+			c.Parallel()
+
+			pa := test.entity.IsPublicAccess()
+			c.Assert(pa, qt.Equals, test.expectedIsPublicAccess)
 		})
 	}
 }
