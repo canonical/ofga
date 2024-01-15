@@ -19,13 +19,21 @@ import (
 
 // OpenFGAParams holds parameters needed to connect to the OpenFGA server.
 type OpenFGAParams struct {
+	// Scheme must be `http` or `https`.
 	Scheme string
-	// Host must be specified without the scheme
-	// (i.e. `api.fga.example` instead of `https://api.fga.example`).
-	Host        string
-	Port        string
-	Token       string
-	StoreID     string
+	// Host is the URL to the OpenFGA server and must be specified without the
+	// scheme (i.e. `api.fga.example` instead of `https://api.fga.example`)
+	Host string
+	// Port specifies the port on which the server is running.
+	Port string
+	// Token specifies the authentication token to use while communicating with
+	// the server.
+	Token string
+	// StoreID specifies the ID of the OpenFGA Store to be used for
+	// authorization checks.
+	StoreID string
+	// AuthModelID specifies the ID of the OpenFGA Authorization model to be
+	// used for authorization checks.
 	AuthModelID string
 }
 
@@ -78,9 +86,8 @@ func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 	)
 
 	config := openfga.Configuration{
-		ApiScheme: p.Scheme,
-		ApiHost:   fmt.Sprintf("%s:%s", p.Host, p.Port),
-		StoreId:   p.StoreID,
+		ApiUrl:  fmt.Sprintf("%s://%s:%s", p.Scheme, p.Host, p.Port),
+		StoreId: p.StoreID,
 	}
 	if p.Token != "" {
 		config.Credentials = &credentials.Credentials{
@@ -192,7 +199,7 @@ func (c *Client) checkRelation(ctx context.Context, tuple Tuple, trace bool, con
 		zap.Bool("trace", trace),
 		zap.Int("contextual tuples", len(contextualTuples)),
 	)
-	cr := openfga.NewCheckRequest(tuple.ToOpenFGATupleKey())
+	cr := openfga.NewCheckRequest(tuple.ToOpenFGACheckRequestTupleKey())
 	cr.SetAuthorizationModelId(c.authModelID)
 
 	if len(contextualTuples) > 0 {
@@ -227,11 +234,11 @@ func (c *Client) AddRemoveRelations(ctx context.Context, addTuples, removeTuples
 
 	if len(addTuples) > 0 {
 		addTupleKeys := tuplesToOpenFGATupleKeys(addTuples)
-		wr.SetWrites(*openfga.NewTupleKeys(addTupleKeys))
+		wr.SetWrites(*openfga.NewWriteRequestWrites(addTupleKeys))
 	}
 	if len(removeTuples) > 0 {
-		removeTupleKeys := tuplesToOpenFGATupleKeys(removeTuples)
-		wr.SetDeletes(*openfga.NewTupleKeys(removeTupleKeys))
+		removeTupleKeys := tuplesToOpenFGATupleKeysWithoutCondition(removeTuples)
+		wr.SetDeletes(*openfga.NewWriteRequestDeletes(removeTupleKeys))
 	}
 	_, _, err := c.api.Write(ctx).Body(*wr).Execute()
 	if err != nil {
@@ -320,7 +327,7 @@ func AuthModelFromJSON(data []byte) (*openfga.AuthorizationModel, error) {
 // function can be used to convert an authorization model from json to the
 // slice of type definitions required by this method.
 func (c *Client) CreateAuthModel(ctx context.Context, authModel *openfga.AuthorizationModel) (string, error) {
-	ar := openfga.NewWriteAuthorizationModelRequest(*authModel.TypeDefinitions)
+	ar := openfga.NewWriteAuthorizationModelRequest(authModel.TypeDefinitions, authModel.SchemaVersion)
 	ar.SetSchemaVersion(authModel.SchemaVersion)
 	resp, _, err := c.api.WriteAuthorizationModel(ctx).Body(*ar).Execute()
 	if err != nil {
@@ -406,7 +413,7 @@ func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize i
 		if err := validateTupleForFindMatchingTuples(tuple); err != nil {
 			return nil, "", fmt.Errorf("invalid tuple for FindMatchingTuples: %v", err)
 		}
-		rr.SetTupleKey(tuple.ToOpenFGATupleKey())
+		rr.SetTupleKey(tuple.ToOpenFGAReadRequestTupleKey())
 	}
 	if pageSize != 0 {
 		rr.SetPageSize(pageSize)
@@ -421,14 +428,14 @@ func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize i
 	}
 	tuples := make([]TimestampedTuple, 0, len(resp.GetTuples()))
 	for _, oTuple := range resp.GetTuples() {
-		t, err := FromOpenFGATupleKey(*oTuple.Key)
+		t, err := FromOpenFGATupleKey(oTuple.Key)
 		if err != nil {
 			zapctx.Error(ctx, fmt.Sprintf("cannot parse tuple from Read response: %v", err))
 			return nil, "", fmt.Errorf("cannot parse tuple %+v, %v", oTuple, err)
 		}
 		tuples = append(tuples, TimestampedTuple{
 			Tuple:     t,
-			Timestamp: *oTuple.Timestamp,
+			Timestamp: oTuple.Timestamp,
 		})
 	}
 	return tuples, resp.GetContinuationToken(), nil
@@ -501,7 +508,7 @@ func (c *Client) findUsersByRelation(ctx context.Context, tuple Tuple, maxDepth 
 		}, nil
 	}
 
-	er := openfga.NewExpandRequest(tuple.ToOpenFGATupleKey())
+	er := openfga.NewExpandRequest(tuple.ToOpenFGAExpandRequestTupleKey())
 	er.SetAuthorizationModelId(c.authModelID)
 	resp, _, err := c.api.Expand(ctx).Body(*er).Execute()
 	if err != nil {
@@ -572,7 +579,7 @@ func (c *Client) traverseTree(ctx context.Context, node *openfga.Node, maxDepth 
 	// If the leaf node contains computedSets or tupleToUserSets, we need
 	// to expand them further to obtain individual users.
 	if leaf.HasUsers() {
-		users, err := c.expand(ctx, maxDepth, *leaf.Users.Users...)
+		users, err := c.expand(ctx, maxDepth, leaf.Users.Users...)
 		if err != nil {
 			return nil, err
 		}
@@ -585,8 +592,9 @@ func (c *Client) traverseTree(ctx context.Context, node *openfga.Node, maxDepth 
 
 	if leaf.HasTupleToUserset() {
 		tupleToUserSet := leaf.GetTupleToUserset()
-		if tupleToUserSet.HasComputed() {
-			return c.expandComputed(ctx, maxDepth, leaf, tupleToUserSet.GetComputed()...)
+		computed := tupleToUserSet.GetComputed()
+		if len(computed) > 0 {
+			return c.expandComputed(ctx, maxDepth, leaf, computed...)
 		}
 	}
 
@@ -604,8 +612,8 @@ func (c *Client) expandComputed(ctx context.Context, maxDepth int, leaf openfga.
 	}
 	users := make(map[string]bool)
 	for _, computed := range computedList {
-		if computed.HasUserset() {
-			userSet := computed.GetUserset()
+		userSet := computed.GetUserset()
+		if userSet != "" {
 			found, err := c.expand(ctx, maxDepth, userSet)
 			if err != nil {
 				return nil, err
@@ -636,7 +644,7 @@ func (c *Client) expand(ctx context.Context, maxDepth int, userStrings ...string
 		case 2:
 			// We need to expand this userSet to obtain the individual
 			// users that it contains.
-			t := openfga.NewTupleKey()
+			t := openfga.NewTupleKeyWithDefaults()
 			t.SetRelation(tokens[1])
 			t.SetObject(tokens[0])
 			tuple, err := FromOpenFGATupleKey(*t)

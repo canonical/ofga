@@ -248,7 +248,7 @@ func ExampleClient_ListStores() {
 	}
 
 	// If it exists, fetch the next page of stores
-	if resp.HasContinuationToken() {
+	if resp.GetContinuationToken() != "" {
 		resp, err = client.ListStores(context.Background(), 0, resp.GetContinuationToken())
 		if err != nil {
 			// Handle err
