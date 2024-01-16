@@ -84,7 +84,7 @@ type Tuple struct {
 }
 
 // ToOpenFGATupleKey converts our Tuple struct into an OpenFGA TupleKey.
-func (t Tuple) ToOpenFGATupleKey() openfga.TupleKey {
+func (t Tuple) ToOpenFGATupleKey() *openfga.TupleKey {
 	k := openfga.NewTupleKeyWithDefaults()
 	// In some cases, specifying the object is not required.
 	if t.Object != nil {
@@ -95,26 +95,26 @@ func (t Tuple) ToOpenFGATupleKey() openfga.TupleKey {
 		k.SetRelation(t.Relation.String())
 	}
 	k.SetObject(t.Target.String())
-	return *k
+	return k
 }
 
 // ToOpenFGACheckRequestTupleKey converts our Tuple struct into an
 // OpenFGA CheckRequestTupleKey.
-func (t Tuple) ToOpenFGACheckRequestTupleKey() openfga.CheckRequestTupleKey {
+func (t Tuple) ToOpenFGACheckRequestTupleKey() *openfga.CheckRequestTupleKey {
 	tk := t.ToOpenFGATupleKey()
-	return *openfga.NewCheckRequestTupleKey(tk.User, tk.Relation, tk.Object)
+	return openfga.NewCheckRequestTupleKey(tk.User, tk.Relation, tk.Object)
 }
 
 // ToOpenFGAExpandRequestTupleKey converts our Tuple struct into an
 // OpenFGA ExpandRequestTupleKey.
-func (t Tuple) ToOpenFGAExpandRequestTupleKey() openfga.ExpandRequestTupleKey {
+func (t Tuple) ToOpenFGAExpandRequestTupleKey() *openfga.ExpandRequestTupleKey {
 	tk := t.ToOpenFGATupleKey()
-	return *openfga.NewExpandRequestTupleKey(tk.Relation, tk.Object)
+	return openfga.NewExpandRequestTupleKey(tk.Relation, tk.Object)
 }
 
 // ToOpenFGAReadRequestTupleKey converts our Tuple struct into an
 // OpenFGA ReadRequestTupleKey.
-func (t Tuple) ToOpenFGAReadRequestTupleKey() openfga.ReadRequestTupleKey {
+func (t Tuple) ToOpenFGAReadRequestTupleKey() *openfga.ReadRequestTupleKey {
 	k := openfga.NewReadRequestTupleKeyWithDefaults()
 	// In some cases, specifying the object is not required.
 	if t.Object != nil {
@@ -125,14 +125,14 @@ func (t Tuple) ToOpenFGAReadRequestTupleKey() openfga.ReadRequestTupleKey {
 		k.SetRelation(t.Relation.String())
 	}
 	k.SetObject(t.Target.String())
-	return *k
+	return k
 }
 
 // ToOpenFGATupleKeyWithoutCondition converts our Tuple struct into an
 // OpenFGA TupleKeyWithoutCondition.
-func (t Tuple) ToOpenFGATupleKeyWithoutCondition() openfga.TupleKeyWithoutCondition {
+func (t Tuple) ToOpenFGATupleKeyWithoutCondition() *openfga.TupleKeyWithoutCondition {
 	tk := t.ToOpenFGATupleKey()
-	return *openfga.NewTupleKeyWithoutCondition(tk.User, tk.Relation, tk.Object)
+	return openfga.NewTupleKeyWithoutCondition(tk.User, tk.Relation, tk.Object)
 }
 
 // FromOpenFGATupleKey converts an openfga.TupleKey struct into a Tuple.
@@ -163,7 +163,7 @@ func FromOpenFGATupleKey(key openfga.TupleKey) (Tuple, error) {
 func tuplesToOpenFGATupleKeys(tuples []Tuple) []openfga.TupleKey {
 	keys := make([]openfga.TupleKey, len(tuples))
 	for i, tuple := range tuples {
-		keys[i] = tuple.ToOpenFGATupleKey()
+		keys[i] = *tuple.ToOpenFGATupleKey()
 	}
 	return keys
 }
@@ -173,7 +173,7 @@ func tuplesToOpenFGATupleKeys(tuples []Tuple) []openfga.TupleKey {
 func tuplesToOpenFGATupleKeysWithoutCondition(tuples []Tuple) []openfga.TupleKeyWithoutCondition {
 	keys := make([]openfga.TupleKeyWithoutCondition, len(tuples))
 	for i, tuple := range tuples {
-		keys[i] = tuple.ToOpenFGATupleKeyWithoutCondition()
+		keys[i] = *tuple.ToOpenFGATupleKeyWithoutCondition()
 	}
 	return keys
 }

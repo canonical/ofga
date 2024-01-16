@@ -199,7 +199,7 @@ func (c *Client) checkRelation(ctx context.Context, tuple Tuple, trace bool, con
 		zap.Bool("trace", trace),
 		zap.Int("contextual tuples", len(contextualTuples)),
 	)
-	cr := openfga.NewCheckRequest(tuple.ToOpenFGACheckRequestTupleKey())
+	cr := openfga.NewCheckRequest(*tuple.ToOpenFGACheckRequestTupleKey())
 	cr.SetAuthorizationModelId(c.authModelID)
 
 	if len(contextualTuples) > 0 {
@@ -413,7 +413,7 @@ func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize i
 		if err := validateTupleForFindMatchingTuples(tuple); err != nil {
 			return nil, "", fmt.Errorf("invalid tuple for FindMatchingTuples: %v", err)
 		}
-		rr.SetTupleKey(tuple.ToOpenFGAReadRequestTupleKey())
+		rr.SetTupleKey(*tuple.ToOpenFGAReadRequestTupleKey())
 	}
 	if pageSize != 0 {
 		rr.SetPageSize(pageSize)
@@ -508,7 +508,7 @@ func (c *Client) findUsersByRelation(ctx context.Context, tuple Tuple, maxDepth 
 		}, nil
 	}
 
-	er := openfga.NewExpandRequest(tuple.ToOpenFGAExpandRequestTupleKey())
+	er := openfga.NewExpandRequest(*tuple.ToOpenFGAExpandRequestTupleKey())
 	er.SetAuthorizationModelId(c.authModelID)
 	resp, _, err := c.api.Expand(ctx).Body(*er).Execute()
 	if err != nil {
