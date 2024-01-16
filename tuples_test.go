@@ -75,7 +75,7 @@ var (
 	}`)
 	authModel = openfga.AuthorizationModel{
 		SchemaVersion: "1.1",
-		TypeDefinitions: &[]openfga.TypeDefinition{
+		TypeDefinitions: []openfga.TypeDefinition{
 			{Type: "user", Relations: &map[string]openfga.Userset{}},
 			{
 				Type: "document",
@@ -84,7 +84,7 @@ var (
 						This: &map[string]interface{}{},
 					},
 					"viewer": {Union: &openfga.Usersets{
-						Child: &[]openfga.Userset{
+						Child: []openfga.Userset{
 							{This: &map[string]interface{}{}},
 							{ComputedUserset: &openfga.ObjectRelation{
 								Object:   openfga.PtrString(""),
@@ -127,9 +127,9 @@ func TestToOpenFGATuple(t *testing.T) {
 			Target:   &entityTestContract,
 		},
 		expectedOpenFGATupleKey: openfga.TupleKey{
-			User:     openfga.PtrString(entityTestUser.String()),
-			Relation: openfga.PtrString(relationEditor.String()),
-			Object:   openfga.PtrString(entityTestContract.String()),
+			User:     entityTestUser.String(),
+			Relation: relationEditor.String(),
+			Object:   entityTestContract.String(),
 		},
 	}, {
 		about: "tuple with relation and target is converted successfully",
@@ -138,8 +138,8 @@ func TestToOpenFGATuple(t *testing.T) {
 			Target:   &entityTestContract,
 		},
 		expectedOpenFGATupleKey: openfga.TupleKey{
-			Relation: openfga.PtrString(relationEditor.String()),
-			Object:   openfga.PtrString(entityTestContract.String()),
+			Relation: relationEditor.String(),
+			Object:   entityTestContract.String(),
 		},
 	}, {
 		about: "tuple with object and target is converted successfully",
@@ -148,8 +148,8 @@ func TestToOpenFGATuple(t *testing.T) {
 			Target: &entityTestContract,
 		},
 		expectedOpenFGATupleKey: openfga.TupleKey{
-			User:   openfga.PtrString(entityTestUser.String()),
-			Object: openfga.PtrString(entityTestContract.String()),
+			User:   entityTestUser.String(),
+			Object: entityTestContract.String(),
 		},
 	}, {
 		about: "tuple with only target is converted successfully",
@@ -157,7 +157,7 @@ func TestToOpenFGATuple(t *testing.T) {
 			Target: &entityTestContract,
 		},
 		expectedOpenFGATupleKey: openfga.TupleKey{
-			Object: openfga.PtrString(entityTestContract.String()),
+			Object: entityTestContract.String(),
 		},
 	}}
 
@@ -166,7 +166,7 @@ func TestToOpenFGATuple(t *testing.T) {
 		c.Run(test.about, func(c *qt.C) {
 			c.Parallel()
 
-			tupleKey := test.tuple.ToOpenFGATupleKey()
+			tupleKey := *test.tuple.ToOpenFGATupleKey()
 			c.Assert(tupleKey, qt.DeepEquals, test.expectedOpenFGATupleKey)
 		})
 	}
@@ -196,14 +196,14 @@ func TestTuplesToOpenFGATupleKeys(t *testing.T) {
 			Target: &entityTestContract,
 		}},
 		expectedOpenFGATupleKeys: []openfga.TupleKey{{
-			User:     openfga.PtrString(entityTestUser.String()),
-			Relation: openfga.PtrString(relationEditor.String()),
-			Object:   openfga.PtrString(entityTestContract.String()),
+			User:     entityTestUser.String(),
+			Relation: relationEditor.String(),
+			Object:   entityTestContract.String(),
 		}, {
-			Relation: openfga.PtrString(relationEditor.String()),
-			Object:   openfga.PtrString(entityTestContract.String()),
+			Relation: relationEditor.String(),
+			Object:   entityTestContract.String(),
 		}, {
-			Object: openfga.PtrString(entityTestContract.String()),
+			Object: entityTestContract.String(),
 		}},
 	}}
 
@@ -218,7 +218,7 @@ func TestTuplesToOpenFGATupleKeys(t *testing.T) {
 	}
 }
 
-func TestEntity_String(t *testing.T) {
+func TestEntityString(t *testing.T) {
 	c := qt.New(t)
 
 	tests := []struct {
@@ -249,6 +249,40 @@ func TestEntity_String(t *testing.T) {
 
 			s := test.entity.String()
 			c.Assert(s, qt.DeepEquals, test.expectedString)
+		})
+	}
+}
+
+func TestEntityIsPublicAccess(t *testing.T) {
+	c := qt.New(t)
+
+	tests := []struct {
+		about                  string
+		entity                 ofga.Entity
+		expectedIsPublicAccess bool
+	}{{
+		about: "non public access entity is identified correctly",
+		entity: ofga.Entity{
+			Kind: "user",
+			ID:   "123",
+		},
+		expectedIsPublicAccess: false,
+	}, {
+		about: "non public access entity is identified correctly",
+		entity: ofga.Entity{
+			Kind: "user",
+			ID:   "*",
+		},
+		expectedIsPublicAccess: true,
+	}}
+
+	for _, test := range tests {
+		test := test
+		c.Run(test.about, func(c *qt.C) {
+			c.Parallel()
+
+			pa := test.entity.IsPublicAccess()
+			c.Assert(pa, qt.Equals, test.expectedIsPublicAccess)
 		})
 	}
 }
@@ -345,25 +379,25 @@ func TestFromOpenFGATupleKey(t *testing.T) {
 	}{{
 		about: "tuple with malformed user entity raises error",
 		tupleKey: openfga.TupleKey{
-			User:     openfga.PtrString("user#XYZ"),
-			Relation: openfga.PtrString("member"),
-			Object:   openfga.PtrString("organization:canonical"),
+			User:     "user#XYZ",
+			Relation: "member",
+			Object:   "organization:canonical",
 		},
 		expectedErr: "invalid entity representation.*",
 	}, {
 		about: "tuple with malformed object entity raises error",
 		tupleKey: openfga.TupleKey{
-			User:     openfga.PtrString("user:XYZ"),
-			Relation: openfga.PtrString("member"),
-			Object:   openfga.PtrString("organization"),
+			User:     "user:XYZ",
+			Relation: "member",
+			Object:   "organization",
 		},
 		expectedErr: "invalid entity representation.*",
 	}, {
 		about: "tuple with all valid fields is converted successfully",
 		tupleKey: openfga.TupleKey{
-			User:     openfga.PtrString("user:XYZ"),
-			Relation: openfga.PtrString("member"),
-			Object:   openfga.PtrString("organization:canonical"),
+			User:     "user:XYZ",
+			Relation: "member",
+			Object:   "organization:canonical",
 		},
 		expectedTuple: ofga.Tuple{
 			Object:   &ofga.Entity{Kind: "user", ID: "XYZ"},
