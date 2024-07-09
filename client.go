@@ -40,18 +40,18 @@ type OpenFGAParams struct {
 // OpenFgaApi defines the methods of the underlying api client that our Client
 // depends upon.
 type OpenFgaApi interface {
-	Check(ctx context.Context) openfga.ApiCheckRequest
+	Check(ctx context.Context, storeID string) openfga.ApiCheckRequest
 	CreateStore(ctx context.Context) openfga.ApiCreateStoreRequest
-	Expand(ctx context.Context) openfga.ApiExpandRequest
-	GetStore(ctx context.Context) openfga.ApiGetStoreRequest
-	ListObjects(ctx context.Context) openfga.ApiListObjectsRequest
+	Expand(ctx context.Context, storeID string) openfga.ApiExpandRequest
+	GetStore(ctx context.Context, storeID string) openfga.ApiGetStoreRequest
+	ListObjects(ctx context.Context, storeID string) openfga.ApiListObjectsRequest
 	ListStores(ctx context.Context) openfga.ApiListStoresRequest
-	Read(ctx context.Context) openfga.ApiReadRequest
-	ReadAuthorizationModel(ctx context.Context, id string) openfga.ApiReadAuthorizationModelRequest
-	ReadAuthorizationModels(ctx context.Context) openfga.ApiReadAuthorizationModelsRequest
-	ReadChanges(ctx context.Context) openfga.ApiReadChangesRequest
-	Write(ctx context.Context) openfga.ApiWriteRequest
-	WriteAuthorizationModel(ctx context.Context) openfga.ApiWriteAuthorizationModelRequest
+	Read(ctx context.Context, storeID string) openfga.ApiReadRequest
+	ReadAuthorizationModel(ctx context.Context, storeID string, id string) openfga.ApiReadAuthorizationModelRequest
+	ReadAuthorizationModels(ctx context.Context, storeID string) openfga.ApiReadAuthorizationModelsRequest
+	ReadChanges(ctx context.Context, storeID string) openfga.ApiReadChangesRequest
+	Write(ctx context.Context, storeID string) openfga.ApiWriteRequest
+	WriteAuthorizationModel(ctx context.Context, storeID string) openfga.ApiWriteAuthorizationModelRequest
 }
 
 // Client is a wrapper over the client provided by OpenFGA
@@ -62,8 +62,7 @@ type OpenFgaApi interface {
 type Client struct {
 	api         OpenFgaApi
 	authModelID string
-	getStoreID  func() string
-	setStoreID  func(storeID string)
+	storeID     string
 }
 
 // NewClient returns a wrapped OpenFGA API client ensuring all calls are made
@@ -86,8 +85,7 @@ func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 	)
 
 	config := openfga.Configuration{
-		ApiUrl:  fmt.Sprintf("%s://%s:%s", p.Scheme, p.Host, p.Port),
-		StoreId: p.StoreID,
+		ApiUrl: fmt.Sprintf("%s://%s:%s", p.Scheme, p.Host, p.Port),
 	}
 	if p.Token != "" {
 		config.Credentials = &credentials.Credentials{
@@ -112,7 +110,7 @@ func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 
 	// If StoreID is present, validate that such a store exists.
 	if p.StoreID != "" {
-		storeResp, _, err := api.GetStore(ctx).Execute()
+		storeResp, _, err := api.GetStore(ctx, p.StoreID).Execute()
 		if err != nil {
 			zapctx.Error(ctx, fmt.Sprintf("cannot retrieve store: %v", err))
 			return nil, fmt.Errorf("cannot retrieve store: %v", err)
@@ -122,7 +120,7 @@ func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 
 	// If AuthModelID is present, validate that such an AuthModel exists.
 	if p.AuthModelID != "" {
-		authModelResp, _, err := api.ReadAuthorizationModel(ctx, p.AuthModelID).Execute()
+		authModelResp, _, err := api.ReadAuthorizationModel(ctx, p.StoreID, p.AuthModelID).Execute()
 		if err != nil {
 			zapctx.Error(ctx, fmt.Sprintf("cannot retrieve authModel: %v", err))
 			return nil, fmt.Errorf("cannot retrieve authModel: %v", err)
@@ -132,8 +130,7 @@ func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 	return &Client{
 		api:         api,
 		authModelID: p.AuthModelID,
-		getStoreID:  client.GetStoreId,
-		setStoreID:  client.SetStoreId,
+		storeID:     p.StoreID,
 	}, nil
 }
 
@@ -149,12 +146,12 @@ func (c *Client) SetAuthModelID(authModelID string) {
 
 // StoreID gets the currently configured store ID.
 func (c *Client) StoreID() string {
-	return c.getStoreID()
+	return c.storeID
 }
 
 // SetStoreID sets the store ID to be used by the client.
 func (c *Client) SetStoreID(storeID string) {
-	c.setStoreID(storeID)
+	c.storeID = storeID
 }
 
 // AddRelation adds the specified relation(s) between the objects & targets as
@@ -209,7 +206,7 @@ func (c *Client) checkRelation(ctx context.Context, tuple Tuple, trace bool, con
 
 	cr.SetTrace(trace)
 
-	checkResp, httpResp, err := c.api.Check(ctx).Body(*cr).Execute()
+	checkResp, httpResp, err := c.api.Check(ctx, c.storeID).Body(*cr).Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot execute Check request: %v", err))
 		return false, fmt.Errorf("cannot check relation: %v", err)
@@ -240,7 +237,7 @@ func (c *Client) AddRemoveRelations(ctx context.Context, addTuples, removeTuples
 		removeTupleKeys := tuplesToOpenFGATupleKeysWithoutCondition(removeTuples)
 		wr.SetDeletes(*openfga.NewWriteRequestDeletes(removeTupleKeys))
 	}
-	_, _, err := c.api.Write(ctx).Body(*wr).Execute()
+	_, _, err := c.api.Write(ctx, c.storeID).Body(*wr).Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot execute Write request: %v", err))
 		return fmt.Errorf("cannot add or remove relations: %v", err)
@@ -290,7 +287,7 @@ func (c *Client) ListStores(ctx context.Context, pageSize int32, continuationTok
 // parameter can be used to restrict the response to show only changes affecting
 // a specific type. For more information, check: https://openfga.dev/docs/interacting/read-tuple-changes#02-get-changes-for-all-object-types
 func (c *Client) ReadChanges(ctx context.Context, entityType string, pageSize int32, continuationToken string) (openfga.ReadChangesResponse, error) {
-	rcr := c.api.ReadChanges(ctx)
+	rcr := c.api.ReadChanges(ctx, c.storeID)
 	rcr = rcr.Type_(entityType)
 	if pageSize != 0 {
 		rcr = rcr.PageSize(pageSize)
@@ -329,7 +326,7 @@ func AuthModelFromJSON(data []byte) (*openfga.AuthorizationModel, error) {
 func (c *Client) CreateAuthModel(ctx context.Context, authModel *openfga.AuthorizationModel) (string, error) {
 	ar := openfga.NewWriteAuthorizationModelRequest(authModel.TypeDefinitions, authModel.SchemaVersion)
 	ar.SetSchemaVersion(authModel.SchemaVersion)
-	resp, _, err := c.api.WriteAuthorizationModel(ctx).Body(*ar).Execute()
+	resp, _, err := c.api.WriteAuthorizationModel(ctx, c.storeID).Body(*ar).Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot execute WriteAuthorizationModel request: %v", err))
 		return "", fmt.Errorf("cannot create auth model: %v", err)
@@ -342,7 +339,7 @@ func (c *Client) CreateAuthModel(ctx context.Context, authModel *openfga.Authori
 // used. If this is the initial request, an empty string should be passed in
 // as the continuationToken.
 func (c *Client) ListAuthModels(ctx context.Context, pageSize int32, continuationToken string) (openfga.ReadAuthorizationModelsResponse, error) {
-	rar := c.api.ReadAuthorizationModels(ctx)
+	rar := c.api.ReadAuthorizationModels(ctx, c.storeID)
 	if pageSize != 0 {
 		rar = rar.PageSize(pageSize)
 	}
@@ -359,7 +356,7 @@ func (c *Client) ListAuthModels(ctx context.Context, pageSize int32, continuatio
 
 // GetAuthModel fetches an authorization model by ID from the openFGA instance.
 func (c *Client) GetAuthModel(ctx context.Context, ID string) (openfga.AuthorizationModel, error) {
-	resp, _, err := c.api.ReadAuthorizationModel(ctx, ID).Execute()
+	resp, _, err := c.api.ReadAuthorizationModel(ctx, c.storeID, ID).Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot execute ReadAuthorizationModel request: %v", err))
 		return openfga.AuthorizationModel{}, fmt.Errorf("cannot list authorization models: %v", err)
@@ -421,7 +418,7 @@ func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize i
 	if continuationToken != "" {
 		rr.SetContinuationToken(continuationToken)
 	}
-	resp, _, err := c.api.Read(ctx).Body(*rr).Execute()
+	resp, _, err := c.api.Read(ctx, c.storeID).Body(*rr).Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot execute Read request: %v", err))
 		return nil, "", fmt.Errorf("cannot fetch matching tuples: %v", err)
@@ -510,7 +507,7 @@ func (c *Client) findUsersByRelation(ctx context.Context, tuple Tuple, maxDepth 
 
 	er := openfga.NewExpandRequest(*tuple.ToOpenFGAExpandRequestTupleKey())
 	er.SetAuthorizationModelId(c.authModelID)
-	resp, _, err := c.api.Expand(ctx).Body(*er).Execute()
+	resp, _, err := c.api.Expand(ctx, c.storeID).Body(*er).Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot execute Expand request: %v", err))
 		return nil, fmt.Errorf("cannot execute Expand request: %v", err)
@@ -714,7 +711,7 @@ func (c *Client) FindAccessibleObjectsByRelation(ctx context.Context, tuple Tupl
 		lor.SetContextualTuples(*openfga.NewContextualTupleKeys(keys))
 	}
 
-	resp, _, err := c.api.ListObjects(ctx).Body(*lor).Execute()
+	resp, _, err := c.api.ListObjects(ctx, c.storeID).Body(*lor).Execute()
 	if err != nil {
 		zapctx.Error(ctx, fmt.Sprintf("cannot execute ListObjects request: %v", err))
 		return nil, fmt.Errorf("cannot list objects: %v", err)

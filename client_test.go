@@ -94,6 +94,7 @@ func getTestClient(c *qt.C) *ofga.Client {
 	newClient, err := ofga.NewClient(context.Background(), validFGAParams)
 	c.Assert(err, qt.IsNil)
 	c.Assert(newClient.AuthModelID(), qt.Equals, validFGAParams.AuthModelID)
+	c.Assert(newClient.StoreID(), qt.Equals, validFGAParams.StoreID)
 
 	for _, cr := range clientCreationRoutes {
 		cr.Finish(c)

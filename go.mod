@@ -1,12 +1,12 @@
 module github.com/canonical/ofga
 
-go 1.20
+go 1.21
 
 require (
 	github.com/frankban/quicktest v1.14.6
 	github.com/jarcoal/httpmock v1.3.1
 	github.com/juju/zaputil v0.0.0-20190326175239-ef53049637ac
-	github.com/openfga/go-sdk v0.3.3
+	github.com/openfga/go-sdk v0.5.0
 	go.uber.org/zap v1.26.0
 )
 
