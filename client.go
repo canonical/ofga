@@ -14,6 +14,7 @@ import (
 	"github.com/juju/zaputil/zapctx"
 	openfga "github.com/openfga/go-sdk"
 	"github.com/openfga/go-sdk/credentials"
+	"github.com/openfga/go-sdk/telemetry"
 	"go.uber.org/zap"
 )
 
@@ -35,6 +36,8 @@ type OpenFGAParams struct {
 	// AuthModelID specifies the ID of the OpenFGA Authorization model to be
 	// used for authorization checks.
 	AuthModelID string
+	// Telemetry specifies the OpenTelemetry metrics configuration.
+	Telemetry *telemetry.Configuration
 }
 
 // OpenFgaApi defines the methods of the underlying api client that our Client
@@ -94,6 +97,9 @@ func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 				ApiToken: p.Token,
 			},
 		}
+	}
+	if p.Telemetry != nil {
+		config.Telemetry = p.Telemetry
 	}
 	configuration, err := openfga.NewConfiguration(config)
 	if err != nil {

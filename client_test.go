@@ -34,6 +34,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/jarcoal/httpmock"
 	openfga "github.com/openfga/go-sdk"
+	"github.com/openfga/go-sdk/telemetry"
 
 	"github.com/canonical/ofga"
 	"github.com/canonical/ofga/mockhttp"
@@ -206,8 +207,34 @@ func TestNewClient(t *testing.T) {
 			},
 		}},
 		expectedAuthModelID: validFGAParams.AuthModelID,
+	}, {
+		about: "client with telemetry created successfully",
+		params: ofga.OpenFGAParams{
+			Scheme:      "http",
+			Host:        "localhost",
+			Port:        "8080",
+			Token:       "InsecureTokenDoNotUse",
+			StoreID:     "0TEST000000000000000000000",
+			AuthModelID: "TestAuthModelID",
+			Telemetry:   telemetry.DefaultTelemetryConfiguration(),
+		},
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route: ListStoreRoute,
+		}, {
+			Route:              GetStoreRoute,
+			ExpectedPathParams: []string{validFGAParams.StoreID},
+			MockResponse:       openfga.GetStoreResponse{Name: "Test Store"},
+		}, {
+			Route:              ReadAuthModelRoute,
+			ExpectedPathParams: []string{validFGAParams.StoreID, validFGAParams.AuthModelID},
+			MockResponse: openfga.ReadAuthorizationModelResponse{
+				AuthorizationModel: &openfga.AuthorizationModel{
+					Id: validFGAParams.AuthModelID,
+				},
+			},
+		}},
+		expectedAuthModelID: validFGAParams.AuthModelID,
 	}}
-
 	for _, test := range tests {
 		test := test
 		c.Run(test.about, func(c *qt.C) {
@@ -511,6 +538,7 @@ func TestClientCheckRelationMethods(t *testing.T) {
 				},
 				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
 				Trace:                openfga.PtrBool(false),
+				Consistency:          openfga.CONSISTENCYPREFERENCE_UNSPECIFIED.Ptr(),
 			},
 			MockResponse: openfga.CheckResponse{
 				Allowed: openfga.PtrBool(true),
@@ -536,6 +564,7 @@ func TestClientCheckRelationMethods(t *testing.T) {
 				},
 				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
 				Trace:                openfga.PtrBool(false),
+				Consistency:          openfga.CONSISTENCYPREFERENCE_UNSPECIFIED.Ptr(),
 			},
 			MockResponse: openfga.CheckResponse{
 				Allowed: openfga.PtrBool(false),
@@ -574,7 +603,8 @@ func TestClientCheckRelationMethods(t *testing.T) {
 						Object:   entityTestContract.String(),
 					}},
 				},
-				Trace: openfga.PtrBool(false),
+				Trace:       openfga.PtrBool(false),
+				Consistency: openfga.CONSISTENCYPREFERENCE_UNSPECIFIED.Ptr(),
 			},
 			MockResponse: openfga.CheckResponse{
 				Allowed: openfga.PtrBool(false),
@@ -612,6 +642,7 @@ func TestClientCheckRelationMethods(t *testing.T) {
 				},
 				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
 				Trace:                openfga.PtrBool(true),
+				Consistency:          openfga.CONSISTENCYPREFERENCE_UNSPECIFIED.Ptr(),
 			},
 			MockResponse: openfga.CheckResponse{
 				Allowed: openfga.PtrBool(true),
@@ -637,6 +668,7 @@ func TestClientCheckRelationMethods(t *testing.T) {
 				},
 				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
 				Trace:                openfga.PtrBool(true),
+				Consistency:          openfga.CONSISTENCYPREFERENCE_UNSPECIFIED.Ptr(),
 			},
 			MockResponse: openfga.CheckResponse{
 				Allowed: openfga.PtrBool(false),
@@ -675,7 +707,8 @@ func TestClientCheckRelationMethods(t *testing.T) {
 						Object:   entityTestContract.String(),
 					}},
 				},
-				Trace: openfga.PtrBool(true),
+				Trace:       openfga.PtrBool(true),
+				Consistency: openfga.CONSISTENCYPREFERENCE_UNSPECIFIED.Ptr(),
 			},
 			MockResponse: openfga.CheckResponse{
 				Allowed: openfga.PtrBool(false),
@@ -1020,7 +1053,7 @@ func TestClientReadChanges(t *testing.T) {
 
 	ctx := context.Background()
 	client := getTestClient(c)
-	writeOp := openfga.WRITE
+	writeOp := openfga.TUPLEOPERATION_WRITE
 	timestamp := time.Now()
 	changes := []openfga.TupleChange{{
 		TupleKey: openfga.TupleKey{
@@ -1486,8 +1519,10 @@ func TestClientFindMatchingTuples(t *testing.T) {
 		about: "an error converting a response tuple is raised to the caller",
 		tuple: ofga.Tuple{},
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:           ReadRoute,
-			ExpectedReqBody: openfga.ReadRequest{},
+			Route: ReadRoute,
+			ExpectedReqBody: openfga.ReadRequest{
+				Consistency: openfga.CONSISTENCYPREFERENCE_UNSPECIFIED.Ptr(),
+			},
 			MockResponse: openfga.ReadResponse{
 				Tuples: []openfga.Tuple{{
 					Key:       openfga.TupleKey{User: "userabc", Relation: "member", Object: "organization:123"},
@@ -1500,8 +1535,10 @@ func TestClientFindMatchingTuples(t *testing.T) {
 		about: "passing in an empty tuple returns all tuples in the system",
 		tuple: ofga.Tuple{},
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:           ReadRoute,
-			ExpectedReqBody: openfga.ReadRequest{},
+			Route: ReadRoute,
+			ExpectedReqBody: openfga.ReadRequest{
+				Consistency: openfga.CONSISTENCYPREFERENCE_UNSPECIFIED.Ptr(),
+			},
 			MockResponse: openfga.ReadResponse{
 				Tuples:            readTuples,
 				ContinuationToken: "NextToken",
@@ -1525,6 +1562,7 @@ func TestClientFindMatchingTuples(t *testing.T) {
 				TupleKey:          &openfga.ReadRequestTupleKey{User: openfga.PtrString("user:XYZ"), Relation: openfga.PtrString("member"), Object: openfga.PtrString("organization:123")},
 				PageSize:          openfga.PtrInt32(50),
 				ContinuationToken: openfga.PtrString("SimulatedToken"),
+				Consistency:       openfga.CONSISTENCYPREFERENCE_UNSPECIFIED.Ptr(),
 			},
 			MockResponse: openfga.ReadResponse{
 				Tuples: readTuples,
@@ -1687,6 +1725,7 @@ func TestClientFindUsersByRelation(t *testing.T) {
 					Object:   "organization:123",
 				},
 				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
+				Consistency:          openfga.CONSISTENCYPREFERENCE_UNSPECIFIED.Ptr(),
 			},
 			MockResponse: openfga.ExpandResponse{
 				Tree: &openfga.UsersetTree{
@@ -1820,6 +1859,7 @@ func TestClientFindUsersByRelationInternal(t *testing.T) {
 					Object:   "organization:123",
 				},
 				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
+				Consistency:          openfga.CONSISTENCYPREFERENCE_UNSPECIFIED.Ptr(),
 			},
 			MockResponse: openfga.ExpandResponse{
 				Tree: &openfga.UsersetTree{
@@ -2380,6 +2420,7 @@ func TestClientFindAccessibleObjectsByRelation(t *testing.T) {
 				Type:                 "organization",
 				Relation:             "member",
 				User:                 "user:XYZ",
+				Consistency:          openfga.CONSISTENCYPREFERENCE_UNSPECIFIED.Ptr(),
 			},
 			MockResponseStatus: http.StatusInternalServerError,
 		}},
@@ -2398,6 +2439,7 @@ func TestClientFindAccessibleObjectsByRelation(t *testing.T) {
 				Type:                 "organization",
 				Relation:             "member",
 				User:                 "user:XYZ",
+				Consistency:          openfga.CONSISTENCYPREFERENCE_UNSPECIFIED.Ptr(),
 			},
 			MockResponse: openfga.ListObjectsResponse{Objects: []string{"", "organization:123"}},
 		}},
@@ -2429,6 +2471,7 @@ func TestClientFindAccessibleObjectsByRelation(t *testing.T) {
 						Object:   "organization:456",
 					}},
 				},
+				Consistency: openfga.CONSISTENCYPREFERENCE_UNSPECIFIED.Ptr(),
 			},
 			MockResponse: openfga.ListObjectsResponse{Objects: []string{"organization:456", "organization:123"}},
 		}},
