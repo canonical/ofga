@@ -234,6 +234,33 @@ func TestNewClient(t *testing.T) {
 			},
 		}},
 		expectedAuthModelID: validFGAParams.AuthModelID,
+	}, {
+		about: "client with custom HTTP client created successfully",
+		params: ofga.OpenFGAParams{
+			Scheme:      "http",
+			Host:        "localhost",
+			Port:        "8080",
+			Token:       "InsecureTokenDoNotUse",
+			StoreID:     "0TEST000000000000000000000",
+			AuthModelID: "TestAuthModelID",
+			HTTPClient:  &http.Client{},
+		},
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route: ListStoreRoute,
+		}, {
+			Route:              GetStoreRoute,
+			ExpectedPathParams: []string{validFGAParams.StoreID},
+			MockResponse:       openfga.GetStoreResponse{Name: "Test Store"},
+		}, {
+			Route:              ReadAuthModelRoute,
+			ExpectedPathParams: []string{validFGAParams.StoreID, validFGAParams.AuthModelID},
+			MockResponse: openfga.ReadAuthorizationModelResponse{
+				AuthorizationModel: &openfga.AuthorizationModel{
+					Id: validFGAParams.AuthModelID,
+				},
+			},
+		}},
+		expectedAuthModelID: validFGAParams.AuthModelID,
 	}}
 	for _, test := range tests {
 		test := test

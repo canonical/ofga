@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/juju/zaputil/zapctx"
@@ -38,6 +39,9 @@ type OpenFGAParams struct {
 	AuthModelID string
 	// Telemetry specifies the OpenTelemetry metrics configuration.
 	Telemetry *telemetry.Configuration
+	// HTTPClient optionally specifies http.Client to allow
+	// for advanced customizations.
+	HTTPClient *http.Client
 }
 
 // OpenFgaApi defines the methods of the underlying api client that our Client
@@ -97,6 +101,23 @@ func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 				ApiToken: p.Token,
 			},
 		}
+	} else {
+		config.Credentials = &credentials.Credentials{
+			Method: credentials.CredentialsMethodNone,
+		}
+	}
+	if p.HTTPClient != nil {
+		config.HTTPClient = p.HTTPClient
+		// When a custom HTTPClient is provided in OpenFGA configuration,
+		// it does not add authorization headers, so we manually add them here.
+		_, headers := config.Credentials.GetHttpClientAndHeaderOverrides()
+		defaultHeaders := make(map[string]string)
+		if len(headers) != 0 {
+			for idx := range headers {
+				defaultHeaders[headers[idx].Key] = headers[idx].Value
+			}
+		}
+		config.DefaultHeaders = defaultHeaders
 	}
 	if p.Telemetry != nil {
 		config.Telemetry = p.Telemetry
