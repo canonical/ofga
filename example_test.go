@@ -6,6 +6,7 @@ package ofga_test
 import (
 	"context"
 	"fmt"
+	"github.com/openfga/go-sdk/telemetry"
 	"os"
 	"testing"
 
@@ -48,6 +49,23 @@ func ExampleNewClient() {
 		Token:       os.Getenv("SECRET_TOKEN"),          // Optional, based on the OpenFGA instance configuration.
 		StoreID:     os.Getenv("OPENFGA_STORE_ID"),      // Required only when connecting to a pre-existing store.
 		AuthModelID: os.Getenv("OPENFGA_AUTH_MODEL_ID"), // Required only when connecting to a pre-existing auth model.
+	})
+	if err != nil {
+		// Handle err
+		return
+	}
+	fmt.Print(client.AuthModelID())
+}
+
+func ExampleNewClient_telemetry() {
+	client, err := ofga.NewClient(context.Background(), ofga.OpenFGAParams{
+		Scheme:      os.Getenv("OPENFGA_API_SCHEME"), // defaults to `https` if not specified.
+		Host:        os.Getenv("OPENFGA_API_HOST"),
+		Port:        os.Getenv("OPENFGA_API_PORT"),
+		Token:       os.Getenv("SECRET_TOKEN"),                 // Optional, based on the OpenFGA instance configuration.
+		StoreID:     os.Getenv("OPENFGA_STORE_ID"),             // Required only when connecting to a pre-existing store.
+		AuthModelID: os.Getenv("OPENFGA_AUTH_MODEL_ID"),        // Required only when connecting to a pre-existing auth model.
+		Telemetry:   telemetry.DefaultTelemetryConfiguration(), // Optional, used to enable OpenTelemetry tracing.
 	})
 	if err != nil {
 		// Handle err
