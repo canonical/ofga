@@ -6,9 +6,10 @@ package ofga_test
 import (
 	"context"
 	"fmt"
-	"github.com/openfga/go-sdk/telemetry"
 	"os"
 	"testing"
+
+        "github.com/openfga/go-sdk/telemetry"
 
 	"github.com/canonical/ofga"
 )
