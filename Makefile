@@ -22,7 +22,7 @@ $(GOVULNCHECK):
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 
 $(GOSEC):
-	go install github.com/securego/gosec/v2/cmd/gosec@v2.13.1
+	go install github.com/securego/gosec/v2/cmd/gosec@v2.21.4
 
 .PHONY: lint
 lint: $(GOFUMPT) $(STATICCHECK) $(GOVULNCHECK) $(GOSEC)  ## Run linter
