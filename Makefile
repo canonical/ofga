@@ -10,7 +10,7 @@ help:  ## Print help about available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
 $(GOFUMPT):
-	go install mvdan.cc/gofumpt@v0.4.0
+	go install mvdan.cc/gofumpt@v0.5.0
 
 $(GOIMPORTS):
 	go install golang.org/x/tools/cmd/goimports@latest
