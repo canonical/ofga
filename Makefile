@@ -16,7 +16,7 @@ $(GOIMPORTS):
 	go install golang.org/x/tools/cmd/goimports@latest
 
 $(STATICCHECK):
-	go install honnef.co/go/tools/cmd/staticcheck@v0.4.3
+	go install honnef.co/go/tools/cmd/staticcheck@v0.6.1
 
 $(GOVULNCHECK):
 	go install golang.org/x/vuln/cmd/govulncheck@latest

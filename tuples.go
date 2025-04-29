@@ -13,7 +13,7 @@ import (
 
 // entityRegex is used to validate that a string represents an Entity/EntitySet
 // and helps to convert from a string representation into an Entity struct.
-var entityRegex = regexp.MustCompile(`([A-Za-z0-9_][A-Za-z0-9_-]*):([A-Za-z0-9_][A-Za-z0-9_@.+-]*|[*])(#([A-Za-z0-9_][A-Za-z0-9_-]*))?$`)
+var entityRegex = regexp.MustCompile(`([A-Za-z0-9_][A-Za-z0-9_-]*):(?:([A-Za-z0-9_][A-Za-z0-9_@.+-]*|[*])(#([A-Za-z0-9_][A-Za-z0-9_-]*))?)?$`)
 
 // Kind represents the type of the entity in OpenFGA.
 type Kind string
@@ -32,7 +32,8 @@ func (r Relation) String() string {
 }
 
 // Entity represents an entity/entity-set in OpenFGA.
-// Example: `user:<user-id>`, `org:<org-id>#member`
+// Example: `user:<user-id>`, `org:<org-id>#member`, `document:` (only kind
+// sometimes used in the Read API)
 type Entity struct {
 	Kind     Kind
 	ID       string
@@ -54,6 +55,8 @@ func (e *Entity) String() string {
 
 // ParseEntity will parse a string representation into an Entity. It expects to
 // find entities of the form:
+//   - <entityType>:
+//     eg. organization:
 //   - <entityType>:<ID>
 //     eg. organization:canonical
 //   - <entityType>:<ID>#<relationship-set>

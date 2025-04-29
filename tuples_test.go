@@ -307,6 +307,12 @@ func TestParseEntity(t *testing.T) {
 			ID:   "canonical",
 		},
 	}, {
+		about:        "entity with only a type is parsed correctly",
+		entityString: "document:",
+		expectedEntity: ofga.Entity{
+			Kind: "document",
+		},
+	}, {
 		about:        "entity with a relation is parsed correctly",
 		entityString: "organization:canonical#member",
 		expectedEntity: ofga.Entity{
