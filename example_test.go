@@ -9,7 +9,7 @@ import (
 	"os"
 	"testing"
 
-        "github.com/openfga/go-sdk/telemetry"
+	"github.com/openfga/go-sdk/telemetry"
 
 	"github.com/canonical/ofga"
 )
