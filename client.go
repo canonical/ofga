@@ -110,7 +110,7 @@ func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 		config.HTTPClient = p.HTTPClient
 		// When a custom HTTPClient is provided in OpenFGA configuration,
 		// it does not add authorization headers, so we manually add them here.
-		_, headers := config.Credentials.GetHttpClientAndHeaderOverrides(config.GetRetryParams(), false)
+		_, headers := config.Credentials.GetHttpClientAndHeaderOverrides(config.GetRetryParams(), config.Debug)
 		defaultHeaders := make(map[string]string)
 		if len(headers) != 0 {
 			for idx := range headers {
