@@ -7,7 +7,7 @@ require (
 	github.com/jarcoal/httpmock v1.4.1
 	github.com/juju/zaputil v0.0.0-20190326175239-ef53049637ac
 	github.com/openfga/go-sdk v0.7.3
-	go.uber.org/zap v1.27.0
+	go.uber.org/zap v1.27.1
 )
 
 require (
