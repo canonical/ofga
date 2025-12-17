@@ -38,8 +38,12 @@ fmt: $(GOIMPORTS) $(GOFUMPT)  ## Reformat code
 	gofumpt -l -w .
 
 .PHONY: test
-test:  ## Run tests (runs 'go test ./...')
-	go test ./...
+test:
+	go test -v $(go list ./... | grep -v /integrationtesting/)
+
+.PHONY: test-integration
+test-integration:  ## Run integration tests (requires OpenFGA running)
+	go test -v ./integrationtesting/...
 
 .PHONY: test-coverage
 test-coverage:

@@ -520,6 +520,83 @@ func TestClientAddRelation(t *testing.T) {
 	}
 }
 
+func TestClientAddRelationIdempotent(t *testing.T) {
+	c := qt.New(t)
+
+	ctx := context.Background()
+	client := getTestClient(c)
+
+	tests := []struct {
+		about       string
+		tuples      []ofga.Tuple
+		mockRoutes  []*mockhttp.RouteResponder
+		expectedErr string
+	}{{
+		about: "error returned by the client is returned to the caller",
+		tuples: []ofga.Tuple{
+			{
+				Object:   &entityTestUser,
+				Relation: relationEditor,
+				Target:   &entityTestContract,
+			},
+		},
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route:              WriteRoute,
+			MockResponseStatus: http.StatusBadRequest,
+		}},
+		expectedErr: "cannot add or remove relations.*",
+	}, {
+		about: "relation added successfully with ignore duplicate option",
+		tuples: []ofga.Tuple{
+			{
+				Object:   &entityTestUser,
+				Relation: relationEditor,
+				Target:   &entityTestContract,
+			},
+		},
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route:              WriteRoute,
+			ExpectedPathParams: []string{validFGAParams.StoreID},
+			ExpectedReqBody: openfga.WriteRequest{
+				Writes: &openfga.WriteRequestWrites{
+					TupleKeys: []openfga.TupleKey{{
+						User:     entityTestUser.String(),
+						Relation: relationEditor.String(),
+						Object:   entityTestContract.String(),
+					}},
+					OnDuplicate: openfga.PtrString(ofga.IgnoreDuplicateOnWrite),
+				},
+				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
+			},
+		}},
+	}}
+
+	for _, test := range tests {
+		c.Run(test.about, func(c *qt.C) {
+			// Set up and configure mock http responders.
+			httpmock.Activate()
+			defer httpmock.DeactivateAndReset()
+			for _, mr := range test.mockRoutes {
+				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
+			}
+
+			// Execute the test.
+			err := client.AddRelationIdempotent(ctx, test.tuples...)
+
+			if test.expectedErr != "" {
+				c.Assert(err, qt.ErrorMatches, test.expectedErr)
+			} else {
+				c.Assert(err, qt.IsNil)
+			}
+
+			// Validate that the mock routes were called as expected.
+			for _, mr := range test.mockRoutes {
+				mr.Finish(c)
+			}
+		})
+	}
+}
+
 func TestClientCheckRelationMethods(t *testing.T) {
 	c := qt.New(t)
 
@@ -843,6 +920,79 @@ func TestClientRemoveRelation(t *testing.T) {
 	}
 }
 
+func TestClientRemoveRelationIdempotent(t *testing.T) {
+	c := qt.New(t)
+
+	ctx := context.Background()
+	client := getTestClient(c)
+
+	tests := []struct {
+		about       string
+		tuples      []ofga.Tuple
+		mockRoutes  []*mockhttp.RouteResponder
+		expectedErr string
+	}{{
+		about: "error returned by the client is returned to the caller",
+		tuples: []ofga.Tuple{{
+			Object:   &entityTestUser,
+			Relation: relationEditor,
+			Target:   &entityTestContract,
+		}},
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route:              WriteRoute,
+			MockResponseStatus: http.StatusInternalServerError,
+		}},
+		expectedErr: "cannot add or remove relation.*",
+	}, {
+		about: "relation removed successfully with ignore missing option",
+		tuples: []ofga.Tuple{{
+			Object:   &entityTestUser,
+			Relation: relationEditor,
+			Target:   &entityTestContract,
+		}},
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route:              WriteRoute,
+			ExpectedPathParams: []string{validFGAParams.StoreID},
+			ExpectedReqBody: openfga.WriteRequest{
+				Deletes: &openfga.WriteRequestDeletes{
+					TupleKeys: []openfga.TupleKeyWithoutCondition{{
+						User:     entityTestUser.String(),
+						Relation: relationEditor.String(),
+						Object:   entityTestContract.String(),
+					}},
+					OnMissing: openfga.PtrString(ofga.IgnoreMissingOnDelete),
+				},
+				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
+			},
+		}},
+	}}
+
+	for _, test := range tests {
+		c.Run(test.about, func(c *qt.C) {
+			// Set up and configure mock http responders.
+			httpmock.Activate()
+			defer httpmock.DeactivateAndReset()
+			for _, mr := range test.mockRoutes {
+				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
+			}
+
+			// Execute the test.
+			err := client.RemoveRelationIdempotent(ctx, test.tuples...)
+
+			if test.expectedErr != "" {
+				c.Assert(err, qt.ErrorMatches, test.expectedErr)
+			} else {
+				c.Assert(err, qt.IsNil)
+			}
+
+			// Validate that the mock routes were called as expected.
+			for _, mr := range test.mockRoutes {
+				mr.Finish(c)
+			}
+		})
+	}
+}
+
 func TestClientAddRemoveRelations(t *testing.T) {
 	c := qt.New(t)
 
@@ -915,6 +1065,98 @@ func TestClientAddRemoveRelations(t *testing.T) {
 
 			// Execute the test.
 			err := client.AddRemoveRelations(ctx, test.addTuples, test.removeTuples)
+
+			if test.expectedErr != "" {
+				c.Assert(err, qt.ErrorMatches, test.expectedErr)
+			} else {
+				c.Assert(err, qt.IsNil)
+			}
+
+			// Validate that the mock routes were called as expected.
+			for _, mr := range test.mockRoutes {
+				mr.Finish(c)
+			}
+		})
+	}
+}
+
+func TestClientAddRemoveRelationsIdempotent(t *testing.T) {
+	c := qt.New(t)
+
+	ctx := context.Background()
+	client := getTestClient(c)
+
+	tests := []struct {
+		about        string
+		addTuples    []ofga.Tuple
+		removeTuples []ofga.Tuple
+		mockRoutes   []*mockhttp.RouteResponder
+		expectedErr  string
+	}{{
+		about: "error returned by the client is returned to the caller",
+		addTuples: []ofga.Tuple{{
+			Object:   &entityTestUser,
+			Relation: relationEditor,
+			Target:   &entityTestContract,
+		}},
+		removeTuples: []ofga.Tuple{{
+			Object:   &entityTestUser,
+			Relation: relationViewer,
+			Target:   &entityTestContract,
+		}},
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route:              WriteRoute,
+			MockResponseStatus: http.StatusInternalServerError,
+		}},
+		expectedErr: "cannot add or remove relations.*",
+	}, {
+		about: "relations added and removed successfully with idempotent options",
+		addTuples: []ofga.Tuple{{
+			Object:   &entityTestUser,
+			Relation: relationEditor,
+			Target:   &entityTestContract,
+		}},
+		removeTuples: []ofga.Tuple{{
+			Object:   &entityTestUser,
+			Relation: relationViewer,
+			Target:   &entityTestContract,
+		}},
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route:              WriteRoute,
+			ExpectedPathParams: []string{validFGAParams.StoreID},
+			ExpectedReqBody: openfga.WriteRequest{
+				Writes: &openfga.WriteRequestWrites{
+					TupleKeys: []openfga.TupleKey{{
+						User:     entityTestUser.String(),
+						Relation: relationEditor.String(),
+						Object:   entityTestContract.String(),
+					}},
+					OnDuplicate: openfga.PtrString(ofga.IgnoreDuplicateOnWrite),
+				},
+				Deletes: &openfga.WriteRequestDeletes{
+					TupleKeys: []openfga.TupleKeyWithoutCondition{{
+						User:     entityTestUser.String(),
+						Relation: relationViewer.String(),
+						Object:   entityTestContract.String(),
+					}},
+					OnMissing: openfga.PtrString(ofga.IgnoreMissingOnDelete),
+				},
+				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
+			},
+		}},
+	}}
+
+	for _, test := range tests {
+		c.Run(test.about, func(c *qt.C) {
+			// Set up and configure mock http responders.
+			httpmock.Activate()
+			defer httpmock.DeactivateAndReset()
+			for _, mr := range test.mockRoutes {
+				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
+			}
+
+			// Execute the test.
+			err := client.AddRemoveRelationsIdempotent(ctx, test.addTuples, test.removeTuples)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)

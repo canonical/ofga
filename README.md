@@ -96,6 +96,8 @@ The documentation for this package can be found on
 If you encounter any issues or have suggestions for improvements, please open
 an issue on the [GitHub repository](https://github.com/canonical/ofga).
 
+For more information on how to contribute, please see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 
 ## Authors
 

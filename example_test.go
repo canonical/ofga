@@ -84,6 +84,7 @@ func ExampleClient_AddRelation() {
 	})
 	if err != nil {
 		// Handle err
+		fmt.Printf("err: %v", err)
 		return
 	}
 }
@@ -91,6 +92,46 @@ func ExampleClient_AddRelation() {
 func ExampleClient_AddRelation_multiple() {
 	// Add relationship tuples
 	err := client.AddRelation(context.Background(),
+		ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "123"},
+			Relation: "editor",
+			Target:   &ofga.Entity{Kind: "document", ID: "ABC"},
+		},
+		ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "456"},
+			Relation: "editor",
+			Target:   &ofga.Entity{Kind: "document", ID: "ABC"},
+		},
+		ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "789"},
+			Relation: "editor",
+			Target:   &ofga.Entity{Kind: "document", ID: "ABC"},
+		},
+	)
+	if err != nil {
+		// Handle err
+		return
+	}
+}
+
+func ExampleClient_AddRelationIdempotent() {
+	// Add a relationship tuple, ignoring duplicates if it already exists.
+	// Requires OpenFGA server version >= 1.10.0.
+	err := client.AddRelationIdempotent(context.Background(), ofga.Tuple{
+		Object:   &ofga.Entity{Kind: "user", ID: "123"},
+		Relation: "editor",
+		Target:   &ofga.Entity{Kind: "document", ID: "ABC"},
+	})
+	if err != nil {
+		fmt.Printf("err: %v", err)
+		return
+	}
+}
+
+func ExampleClient_AddRelationIdempotent_multiple() {
+	// Add relationship tuples idempotently, ignoring duplicates.
+	// Requires OpenFGA server version >= 1.10.0.
+	err := client.AddRelationIdempotent(context.Background(),
 		ofga.Tuple{
 			Object:   &ofga.Entity{Kind: "user", ID: "123"},
 			Relation: "editor",
@@ -223,6 +264,46 @@ func ExampleClient_RemoveRelation_multiple() {
 	}
 }
 
+func ExampleClient_RemoveRelationIdempotent() {
+	// Remove a relationship tuple, ignoring if it doesn't exist.
+	// Requires OpenFGA server version >= 1.10.0.
+	err := client.RemoveRelationIdempotent(context.Background(), ofga.Tuple{
+		Object:   &ofga.Entity{Kind: "user", ID: "123"},
+		Relation: "editor",
+		Target:   &ofga.Entity{Kind: "document", ID: "ABC"},
+	})
+	if err != nil {
+		// Handle err
+		return
+	}
+}
+
+func ExampleClient_RemoveRelationIdempotent_multiple() {
+	// Remove relationship tuples idempotently, ignoring missing tuples.
+	// Requires OpenFGA server version >= 1.10.0.
+	err := client.RemoveRelationIdempotent(context.Background(),
+		ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "123"},
+			Relation: "editor",
+			Target:   &ofga.Entity{Kind: "document", ID: "ABC"},
+		},
+		ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "456"},
+			Relation: "editor",
+			Target:   &ofga.Entity{Kind: "document", ID: "ABC"},
+		},
+		ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "789"},
+			Relation: "editor",
+			Target:   &ofga.Entity{Kind: "document", ID: "ABC"},
+		},
+	)
+	if err != nil {
+		// Handle err
+		return
+	}
+}
+
 func ExampleClient_AddRemoveRelations() {
 	// Add and remove tuples to modify a user's relation with a document
 	// from viewer to editor.
@@ -238,6 +319,28 @@ func ExampleClient_AddRemoveRelations() {
 	}}
 	// Add and remove tuples atomically.
 	err := client.AddRemoveRelations(context.Background(), addTuples, removeTuples)
+	if err != nil {
+		// Handle err
+		return
+	}
+}
+
+func ExampleClient_AddRemoveRelationsIdempotent() {
+	// Add and remove tuples to modify a user's relation with a document
+	// from viewer to editor, ignoring duplicates and missing tuples.
+	// Requires OpenFGA server version >= 1.10.0.
+	addTuples := []ofga.Tuple{{
+		Object:   &ofga.Entity{Kind: "user", ID: "456"},
+		Relation: "editor",
+		Target:   &ofga.Entity{Kind: "document", ID: "ABC"},
+	}}
+	removeTuples := []ofga.Tuple{{
+		Object:   &ofga.Entity{Kind: "user", ID: "456"},
+		Relation: "viewer",
+		Target:   &ofga.Entity{Kind: "document", ID: "ABC"},
+	}}
+	// Add and remove tuples atomically and idempotently.
+	err := client.AddRemoveRelationsIdempotent(context.Background(), addTuples, removeTuples)
 	if err != nil {
 		// Handle err
 		return
