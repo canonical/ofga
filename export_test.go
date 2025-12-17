@@ -13,4 +13,6 @@ var (
 	Expand                                          = (*Client).expand
 	ExpandComputed                                  = (*Client).expandComputed
 	ValidateTupleForFindAccessibleObjectsByRelation = validateTupleForFindAccessibleObjectsByRelation
+	IgnoreMissingOnDelete                           = ignoreMissingOnDelete
+	IgnoreDuplicateOnWrite                          = ignoreDuplicateOnWrite
 )

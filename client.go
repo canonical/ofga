@@ -19,6 +19,12 @@ import (
 	"go.uber.org/zap"
 )
 
+const ignoreMissingOnDelete = "ignore"
+const ignoreDuplicateOnWrite = "ignore"
+
+type writeOption func(wr *openfga.WriteRequestWrites) error
+type deleteOption func(dr *openfga.WriteRequestDeletes) error
+
 // OpenFGAParams holds parameters needed to connect to the OpenFGA server.
 type OpenFGAParams struct {
 	// Scheme must be `http` or `https`.
@@ -187,6 +193,14 @@ func (c *Client) AddRelation(ctx context.Context, tuples ...Tuple) error {
 	return c.AddRemoveRelations(ctx, tuples, nil)
 }
 
+// AddRelationIdempotent adds the specified relation(s) between the objects & targets as
+// specified by the given tuple(s), and ignores duplicate tuples that already exist in the store.
+// Note: Duplicates within the same request are not allowed and will cause an error.
+// It requires OpenFGA server version >= 1.10.0.
+func (c *Client) AddRelationIdempotent(ctx context.Context, tuples ...Tuple) error {
+	return c.AddRemoveRelationsIdempotent(ctx, tuples, nil)
+}
+
 // CheckRelation checks whether the specified relation exists (either directly
 // or indirectly) between the object and the target specified by the tuple.
 //
@@ -249,20 +263,64 @@ func (c *Client) RemoveRelation(ctx context.Context, tuples ...Tuple) error {
 	return c.AddRemoveRelations(ctx, nil, tuples)
 }
 
+// RemoveRelationIdempotent removes the specified relation(s) between the objects &
+// targets as specified by the given tuples and ignores missing tuples that don't exist in the store.
+// Note: Duplicates within the same request are not allowed and will cause an error.
+// It requires OpenFGA server version >= 1.10.0.
+func (c *Client) RemoveRelationIdempotent(ctx context.Context, tuples ...Tuple) error {
+	return c.AddRemoveRelationsIdempotent(ctx, nil, tuples)
+}
+
 // AddRemoveRelations adds and removes the specified relation tuples in a single
 // atomic write operation. If you want to solely add relations or solely remove
 // relations, consider using the AddRelation or RemoveRelation methods instead.
 func (c *Client) AddRemoveRelations(ctx context.Context, addTuples, removeTuples []Tuple) error {
+	return c.addRemoveRelations(ctx, addTuples, removeTuples, nil, nil)
+}
+
+// AddRemoveRelationsIdempotent adds and removes the specified relation tuples in a single
+// atomic write operation. If you want to solely add relations or solely remove
+// relations, consider using the AddRelation or RemoveRelation methods instead.
+// This method ignores missing tuples during removal and duplicate tuples during addition that already exist in the store.
+// Note: Duplicates within the same request are not allowed and will cause an error.
+// It requires OpenFGA server version >= 1.10.0.
+func (c *Client) AddRemoveRelationsIdempotent(ctx context.Context, addTuples, removeTuples []Tuple) error {
+	return c.addRemoveRelations(ctx, addTuples, removeTuples, []writeOption{
+		func(wr *openfga.WriteRequestWrites) error {
+			wr.SetOnDuplicate(ignoreDuplicateOnWrite)
+			return nil
+		},
+	}, []deleteOption{
+		func(dr *openfga.WriteRequestDeletes) error {
+			dr.SetOnMissing(ignoreMissingOnDelete)
+			return nil
+		},
+	})
+}
+
+func (c *Client) addRemoveRelations(ctx context.Context, addTuples, removeTuples []Tuple, requestWrites []writeOption, requestDeletes []deleteOption) error {
 	wr := openfga.NewWriteRequest()
 	wr.SetAuthorizationModelId(c.authModelID)
 
 	if len(addTuples) > 0 {
 		addTupleKeys := tuplesToOpenFGATupleKeys(addTuples)
-		wr.SetWrites(*openfga.NewWriteRequestWrites(addTupleKeys))
+		wReq := openfga.NewWriteRequestWrites(addTupleKeys)
+		for _, opt := range requestWrites {
+			if err := opt(wReq); err != nil {
+				return err
+			}
+		}
+		wr.SetWrites(*wReq)
 	}
 	if len(removeTuples) > 0 {
 		removeTupleKeys := tuplesToOpenFGATupleKeysWithoutCondition(removeTuples)
-		wr.SetDeletes(*openfga.NewWriteRequestDeletes(removeTupleKeys))
+		delReq := openfga.NewWriteRequestDeletes(removeTupleKeys)
+		for _, opt := range requestDeletes {
+			if err := opt(delReq); err != nil {
+				return err
+			}
+		}
+		wr.SetDeletes(*delReq)
 	}
 	_, _, err := c.api.Write(ctx, c.storeID).Body(*wr).Execute()
 	if err != nil {
