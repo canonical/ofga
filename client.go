@@ -675,9 +675,7 @@ func (c *Client) traverseTree(ctx context.Context, node *openfga.Node, maxDepth 
 	if leaf.HasTupleToUserset() {
 		tupleToUserSet := leaf.GetTupleToUserset()
 		computed := tupleToUserSet.GetComputed()
-		if len(computed) > 0 {
-			return c.expandComputed(ctx, maxDepth, leaf, computed...)
-		}
+		return c.expandComputed(ctx, maxDepth, leaf, computed...)
 	}
 
 	logError("unknown leaf type", "leaf", leaf)
