@@ -573,10 +573,17 @@ func (c *Client) FindUsersByRelation(ctx context.Context, tuple Tuple) ([]Entity
 	}
 	entities := make([]Entity, 0, len(resp.Users))
 	for _, u := range resp.Users {
-		entities = append(entities, Entity{
-			Kind: Kind(kind),
-			ID:   u.Object.Id,
-		})
+		if u.HasWildcard() {
+			entities = append(entities, Entity{
+				Kind: Kind(kind),
+				ID:   "*",
+			})
+		} else {
+			entities = append(entities, Entity{
+				Kind: Kind(kind),
+				ID:   u.Object.Id,
+			})
+		}
 	}
 	return entities, nil
 }

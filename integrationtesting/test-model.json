@@ -166,6 +166,10 @@
                                 "type": "user"
                             },
                             {
+                                "type": "user",
+                                "wildcard": {}
+                            },
+                            {
                                 "type": "organization",
                                 "relation": "member"
                             }
