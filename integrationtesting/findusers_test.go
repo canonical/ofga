@@ -12,7 +12,6 @@ func TestFindUsersByRelation(t *testing.T) {
 		name          string
 		tuples        []ofga.Tuple
 		query         ofga.Tuple
-		maxDepth      int
 		expectedUsers []ofga.Entity
 		expectError   bool
 		description   string
@@ -36,7 +35,6 @@ func TestFindUsersByRelation(t *testing.T) {
 				Relation: "editor",
 				Target:   &ofga.Entity{Kind: "document", ID: "doc1"},
 			},
-			maxDepth: 10,
 			expectedUsers: []ofga.Entity{
 				{Kind: "user", ID: "alice"},
 				{Kind: "user", ID: "bob"},
@@ -70,7 +68,6 @@ func TestFindUsersByRelation(t *testing.T) {
 				Relation: "viewer",
 				Target:   &ofga.Entity{Kind: "document", ID: "doc1"},
 			},
-			maxDepth: 10,
 			expectedUsers: []ofga.Entity{
 				{Kind: "user", ID: "alice"},
 				{Kind: "user", ID: "bob"},
@@ -105,10 +102,10 @@ func TestFindUsersByRelation(t *testing.T) {
 				},
 			},
 			query: ofga.Tuple{
+				Object:   &ofga.Entity{Kind: "user"},
 				Relation: "member",
 				Target:   &ofga.Entity{Kind: "organization", ID: "org1"},
 			},
-			maxDepth: 10,
 			expectedUsers: []ofga.Entity{
 				{Kind: "user", ID: "alice"},
 				{Kind: "user", ID: "bob"},
@@ -168,7 +165,6 @@ func TestFindUsersByRelation(t *testing.T) {
 				Relation: "viewer",
 				Target:   &ofga.Entity{Kind: "document", ID: "doc1"},
 			},
-			maxDepth: 10,
 			expectedUsers: []ofga.Entity{
 				{Kind: "user", ID: "alice"},
 				{Kind: "user", ID: "bob"},
@@ -190,7 +186,6 @@ func TestFindUsersByRelation(t *testing.T) {
 				Relation: "editor",
 				Target:   &ofga.Entity{Kind: "document", ID: "doc1"},
 			},
-			maxDepth:      10,
 			expectedUsers: []ofga.Entity{},
 			expectError:   false,
 		},
@@ -215,7 +210,6 @@ func TestFindUsersByRelation(t *testing.T) {
 				Relation: "viewer",
 				Target:   &ofga.Entity{Kind: "document", ID: "doc1"},
 			},
-			maxDepth: 10,
 			expectedUsers: []ofga.Entity{
 				{Kind: "user", ID: "alice"},
 			},
@@ -268,7 +262,6 @@ func TestFindUsersByRelation(t *testing.T) {
 				Relation: "member",
 				Target:   &ofga.Entity{Kind: "organization", ID: "org1"},
 			},
-			maxDepth: 10,
 			expectedUsers: []ofga.Entity{
 				{Kind: "user", ID: "alice"},
 				{Kind: "user", ID: "bob"},
@@ -308,7 +301,6 @@ func TestFindUsersByRelation(t *testing.T) {
 				Relation: "viewer",
 				Target:   &ofga.Entity{Kind: "document", ID: "doc1"},
 			},
-			maxDepth: 10,
 			expectedUsers: []ofga.Entity{
 				{Kind: "user", ID: "alice"},
 				{Kind: "user", ID: "charlie"},
@@ -355,7 +347,6 @@ func TestFindUsersByRelation(t *testing.T) {
 				Relation: "viewer",
 				Target:   &ofga.Entity{Kind: "document", ID: "doc1"},
 			},
-			maxDepth: 10,
 			expectedUsers: []ofga.Entity{
 				{Kind: "user", ID: "alice"},
 			},
@@ -387,7 +378,6 @@ func TestFindUsersByRelation(t *testing.T) {
 				Relation: "viewer",
 				Target:   &ofga.Entity{Kind: "document", ID: "doc1"},
 			},
-			maxDepth:      10,
 			expectedUsers: []ofga.Entity{},
 			expectError:   false,
 		},
@@ -455,7 +445,6 @@ func TestFindUsersByRelation(t *testing.T) {
 				Relation: "viewer",
 				Target:   &ofga.Entity{Kind: "document", ID: "doc1"},
 			},
-			maxDepth: 10,
 			expectedUsers: []ofga.Entity{
 				{Kind: "user", ID: "alice"},
 				{Kind: "user", ID: "charlie"},
@@ -515,7 +504,6 @@ func TestFindUsersByRelation(t *testing.T) {
 				Relation: "viewer",
 				Target:   &ofga.Entity{Kind: "document", ID: "doc2"},
 			},
-			maxDepth: 10,
 			expectedUsers: []ofga.Entity{
 				{Kind: "user", ID: "bob"},
 			},
@@ -554,7 +542,7 @@ func TestFindUsersByRelation(t *testing.T) {
 			}
 
 			// Execute the query
-			users, err := ofgaClient.FindUsersByRelation(t.Context(), test.query, test.maxDepth)
+			users, err := ofgaClient.FindUsersByRelation(t.Context(), test.query)
 
 			// Check error expectation
 			if test.expectError {

@@ -531,7 +531,7 @@ func ExampleClient_FindUsersByRelation() {
 		Relation: "viewer",
 		Target:   &ofga.Entity{Kind: "document", ID: "ABC"},
 	}
-	users, err := client.FindUsersByRelation(context.Background(), searchTuple, 2)
+	users, err := client.FindUsersByRelation(context.Background(), searchTuple)
 	if err != nil {
 		// Handle error
 	}

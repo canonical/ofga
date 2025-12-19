@@ -8,10 +8,6 @@ var (
 	TupleIsEmpty                                    = (*Tuple).isEmpty
 	ValidateTupleForFindMatchingTuples              = validateTupleForFindMatchingTuples
 	ValidateTupleForFindUsersByRelation             = validateTupleForFindUsersByRelation
-	FindUsersByRelationInternal                     = (*Client).findUsersByRelation
-	TraverseTree                                    = (*Client).traverseTree
-	Expand                                          = (*Client).expand
-	ExpandComputed                                  = (*Client).expandComputed
 	ValidateTupleForFindAccessibleObjectsByRelation = validateTupleForFindAccessibleObjectsByRelation
 	IgnoreMissingOnDelete                           = ignoreMissingOnDelete
 	IgnoreDuplicateOnWrite                          = ignoreDuplicateOnWrite
