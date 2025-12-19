@@ -509,6 +509,33 @@ func TestFindUsersByRelation(t *testing.T) {
 			},
 			expectError: false,
 		},
+		{
+			name:        "wildcard_public_access",
+			description: "Find users with wildcard (public) access to a document",
+			tuples: []ofga.Tuple{
+				// wildcard viewer access makes document publicly viewable
+				{
+					Object:   &ofga.Entity{Kind: "user", ID: "*"},
+					Relation: "viewer",
+					Target:   &ofga.Entity{Kind: "document", ID: "public-doc"},
+				},
+				// alice also has direct editor access
+				{
+					Object:   &ofga.Entity{Kind: "user", ID: "alice"},
+					Relation: "editor",
+					Target:   &ofga.Entity{Kind: "document", ID: "public-doc"},
+				},
+			},
+			query: ofga.Tuple{
+				Relation: "viewer",
+				Target:   &ofga.Entity{Kind: "document", ID: "public-doc"},
+			},
+			expectedUsers: []ofga.Entity{
+				{Kind: "user", ID: "*"},
+				{Kind: "user", ID: "alice"},
+			},
+			expectError: false,
+		},
 	}
 
 	for _, test := range tests {
