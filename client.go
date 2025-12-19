@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/juju/zaputil/zapctx"
 	openfga "github.com/openfga/go-sdk"
@@ -65,6 +64,7 @@ type OpenFgaApi interface {
 	ReadChanges(ctx context.Context, storeID string) openfga.ApiReadChangesRequest
 	Write(ctx context.Context, storeID string) openfga.ApiWriteRequest
 	WriteAuthorizationModel(ctx context.Context, storeID string) openfga.ApiWriteAuthorizationModelRequest
+	ListUsers(ctx context.Context, storeID string) openfga.ApiListUsersRequest
 }
 
 // Client is a wrapper over the client provided by OpenFGA
@@ -528,33 +528,57 @@ func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize i
 // through the relationship tuples present in the system, but also takes into
 // consideration the authorization model and the relationship tuples implied
 // by the model (for instance, a writer of a document is also a viewer of
-// the document), and recursively expands these relationships upto `maxDepth`
-// levels deep to obtain the final list of users. A `maxDepth` of `1` causes
-// the current tuple to be expanded and the immediate expansion results to be
-// returned. `maxDepth` can be any positive number.
+// the document).
 //
-// This method requires that Tuple.Target and Tuple.Relation be specified.
+// This method requires Tuple.Target and Tuple.Relation be specified.
+// The Tuple.Object.Kind field can optionally be used to filter the users
+// returned to a specific type (defaults to "user" if not specified).
 //
-// Note that this method call is expensive and has high latency, and should be
-// used with caution. The official docs state that the underlying API method
-// was intended to be used for debugging: https://openfga.dev/docs/interacting/relationship-queries#caveats-and-when-not-to-use-it-2
-func (c *Client) FindUsersByRelation(ctx context.Context, tuple Tuple, maxDepth int) ([]Entity, error) {
-	if maxDepth < 1 {
-		return nil, errors.New(`maxDepth must be greater than or equal to 1`)
+// An example: to find all users of kind "user" that have "viewer" relation to a document with ID "doc1":
+//
+//	ofga.FindUsersByRelation(ctx, ofga.Tuple{
+//		Object: &ofga.Entity{
+//			Kind: "user",
+//		},
+//		Relation: "viewer",
+//		Target:   &ofga.Entity{Kind: "document", ID: "doc1"},
+//	})
+//
+// FindUsersByRelation uses `ListUsers` and is available in OpenFGA server version >= 1.5.6.
+func (c *Client) FindUsersByRelation(ctx context.Context, tuple Tuple) ([]Entity, error) {
+	if err := validateTupleForFindUsersByRelation(tuple); err != nil {
+		return nil, fmt.Errorf("invalid tuple for FindUsersByRelation: %v", err)
 	}
-	userStrings, err := c.findUsersByRelation(ctx, tuple, maxDepth)
+	kind := "user"
+	if tuple.Object != nil && tuple.Object.Kind != "" {
+		kind = tuple.Object.Kind.String()
+	}
+	userFilters := []openfga.UserTypeFilter{{Type: kind}}
+
+	body := openfga.ListUsersRequest{
+		Object: openfga.FgaObject{
+			Type: string(tuple.Target.Kind),
+			Id:   string(tuple.Target.ID),
+		},
+		Relation:    tuple.Relation.String(),
+		UserFilters: userFilters,
+	}
+
+	resp, _, err := c.api.ListUsers(ctx, c.storeID).
+		Body(body).
+		Execute()
 	if err != nil {
-		return nil, err
+		zapctx.Error(ctx, fmt.Sprintf("cannot execute ListUsers request: %v", err))
+		return nil, fmt.Errorf("cannot execute ListUsers request: %v", err)
 	}
-	var users []Entity
-	for u := range userStrings {
-		user, err := ParseEntity(u)
-		if err != nil {
-			return nil, fmt.Errorf("cannot parse entity %v from Expand response: %v", u, err)
-		}
-		users = append(users, user)
+	entities := make([]Entity, 0, len(resp.Users))
+	for _, u := range resp.Users {
+		entities = append(entities, Entity{
+			Kind: Kind(kind),
+			ID:   u.Object.Id,
+		})
 	}
-	return users, nil
+	return entities, nil
 }
 
 // validateTupleForFindUsersByRelation validates that the input tuples to the
@@ -570,180 +594,6 @@ func validateTupleForFindUsersByRelation(tuple Tuple) error {
 		return errors.New("missing tuple.Relation")
 	}
 	return nil
-}
-
-// findUsersByRelation is the internal implementation for
-// FindUsersByRelation. It returns a set of userStrings representing the
-// list of users that have access to the specified object via the specified
-// relation.
-func (c *Client) findUsersByRelation(ctx context.Context, tuple Tuple, maxDepth int) (map[string]bool, error) {
-	if err := validateTupleForFindUsersByRelation(tuple); err != nil {
-		return nil, fmt.Errorf("invalid tuple for FindUsersByRelation: %v", err)
-	}
-	// If we have reached the maxDepth and shouldn't expand the results further,
-	// return the current userSet.
-	if maxDepth == 0 {
-		userSet := tuple.Target
-		userSet.Relation = tuple.Relation
-		return map[string]bool{
-			userSet.String(): true,
-		}, nil
-	}
-
-	er := openfga.NewExpandRequest(*tuple.ToOpenFGAExpandRequestTupleKey())
-	er.SetAuthorizationModelId(c.authModelID)
-	resp, _, err := c.api.Expand(ctx, c.storeID).Body(*er).Execute()
-	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute Expand request: %v", err))
-		return nil, fmt.Errorf("cannot execute Expand request: %v", err)
-	}
-
-	tree := resp.GetTree()
-	if !tree.HasRoot() {
-		return nil, errors.New("tree from Expand response has no root")
-	}
-	root := tree.GetRoot()
-	leaves, err := c.traverseTree(ctx, &root, maxDepth-1)
-	if err != nil {
-		return nil, fmt.Errorf("cannot expand the intermediate results: %v", err)
-	}
-	return leaves, nil
-}
-
-// traverseTree will recursively expand the tree returned by an openfga Expand
-// call to find all users that have the specified relation to the specified
-// target entity.
-func (c *Client) traverseTree(ctx context.Context, node *openfga.Node, maxDepth int) (map[string]bool, error) {
-	logError := func(message, nodeType string, n interface{}) {
-		data, _ := json.Marshal(n)
-		zapctx.Error(ctx, message, zap.String(nodeType, string(data)))
-	}
-
-	// If this is a union node, we traverse all child nodes recursively to get
-	// the leaf nodes and return the aggregated results.
-	if node.HasUnion() {
-		union := node.GetUnion()
-		users := make(map[string]bool)
-		for _, childNode := range union.GetNodes() {
-			childNode := childNode
-			childNodeUsers, err := c.traverseTree(ctx, &childNode, maxDepth)
-			if err != nil {
-				return nil, err
-			}
-			for userString := range childNodeUsers {
-				users[userString] = true
-			}
-		}
-		return users, nil
-	}
-
-	if !node.HasLeaf() {
-		logError("unknown node type", "node", node)
-		return nil, errors.New("unknown node type")
-	}
-
-	leaf := node.GetLeaf()
-	// A leaf node may contain either:
-	// - users: these are the users/userSets that have the specified
-	//		relation with the specified object via relationship tuples that
-	//		were added to the system.
-	// - computed userSets: these are the userSets that have the specified
-	//		relation with the specified object via an implied relationship
-	//		defined by the authorization model. Example: All writers of a
-	//		document are viewers of the document.
-	// - tupleToUserSet: these are userSets that have the specified
-	//		relation with the specified object via an indirect implied
-	//		relation through other types defined in the authorization
-	//		model. Example: Any user that is assigned the editor relation
-	//		on a folder is automatically assigned the editor relation to
-	//		any documents that belong to that folder.
-	//
-	// If the leaf node contains computedSets or tupleToUserSets, we need
-	// to expand them further to obtain individual users.
-	if leaf.HasUsers() {
-		users, err := c.expand(ctx, maxDepth, leaf.Users.Users...)
-		if err != nil {
-			return nil, err
-		}
-		return users, nil
-	}
-
-	if leaf.HasComputed() {
-		return c.expandComputed(ctx, maxDepth, leaf, leaf.GetComputed())
-	}
-
-	if leaf.HasTupleToUserset() {
-		tupleToUserSet := leaf.GetTupleToUserset()
-		computed := tupleToUserSet.GetComputed()
-		return c.expandComputed(ctx, maxDepth, leaf, computed...)
-	}
-
-	logError("unknown leaf type", "leaf", leaf)
-	return nil, errors.New("unknown leaf type")
-}
-
-// expandComputed is a helper method to expand a computedSet into its
-// constituent users. The leaf parameter of this function is used for
-// logging purposes only.
-func (c *Client) expandComputed(ctx context.Context, maxDepth int, leaf openfga.Leaf, computedList ...openfga.Computed) (map[string]bool, error) {
-	logError := func(message, nodeType string, n interface{}) {
-		data, _ := json.Marshal(n)
-		zapctx.Error(ctx, message, zap.String(nodeType, string(data)))
-	}
-	users := make(map[string]bool)
-	for _, computed := range computedList {
-		userSet := computed.GetUserset()
-		if userSet != "" {
-			found, err := c.expand(ctx, maxDepth, userSet)
-			if err != nil {
-				return nil, err
-			}
-			for userString := range found {
-				users[userString] = true
-			}
-		} else {
-			logError("missing userSet", "leaf", leaf)
-			return nil, errors.New("missing userSet")
-		}
-	}
-	return users, nil
-}
-
-// expand checks all userStrings in the input list and expands any userSets
-// that are present into the constituent individual users. Example:
-// "team:planning#members" would be expanded into "user:abc", "user:xyz", etc.
-func (c *Client) expand(ctx context.Context, maxDepth int, userStrings ...string) (map[string]bool, error) {
-	users := make(map[string]bool, len(userStrings))
-	for _, u := range userStrings {
-		tokens := strings.Split(u, "#")
-		switch len(tokens) {
-		case 1:
-			// No '#' is present so this is an individual user. Add it to the
-			// map and continue.
-			users[u] = true
-		case 2:
-			// We need to expand this userSet to obtain the individual
-			// users that it contains.
-			t := openfga.NewTupleKeyWithDefaults()
-			t.SetRelation(tokens[1])
-			t.SetObject(tokens[0])
-			tuple, err := FromOpenFGATupleKey(*t)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse tuple %s, %v", u, err)
-			}
-			found, err := c.findUsersByRelation(ctx, tuple, maxDepth)
-			if err != nil {
-				return nil, fmt.Errorf("failed to expand %s, %v", u, err)
-			}
-			for userString := range found {
-				users[userString] = true
-			}
-		default:
-			zapctx.Error(ctx, fmt.Sprintf("unknown user representation: %s", u))
-			return nil, fmt.Errorf("unknown user representation: %s", u)
-		}
-	}
-	return users, nil
 }
 
 // validateTupleForFindAccessibleObjectsByRelation validates that the input

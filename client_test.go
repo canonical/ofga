@@ -47,6 +47,7 @@ var (
 	GetStoreRoute       = mockhttp.Route{Method: http.MethodGet, Endpoint: `=~/stores/(\w+)\z`}
 	ListObjectsRoute    = mockhttp.Route{Method: http.MethodPost, Endpoint: `=~/stores/(\w+)/list-objects\z`}
 	ListStoreRoute      = mockhttp.Route{Method: http.MethodGet, Endpoint: "/stores"}
+	ListUsersRoute      = mockhttp.Route{Method: http.MethodPost, Endpoint: `=~/stores/(\w+)/list-users\z`}
 	ReadRoute           = mockhttp.Route{Method: http.MethodPost, Endpoint: `=~/stores/(\w+)/read\z`}
 	ReadAuthModelRoute  = mockhttp.Route{Method: http.MethodGet, Endpoint: `=~/stores/(\w+)/authorization-models/(\w+)\z`}
 	ReadAuthModelsRoute = mockhttp.Route{Method: http.MethodGet, Endpoint: `=~/stores/(\w+)/authorization-models\z`}
@@ -1938,71 +1939,51 @@ func TestClientFindUsersByRelation(t *testing.T) {
 	tests := []struct {
 		about         string
 		tuple         ofga.Tuple
-		maxDepth      int
 		mockRoutes    []*mockhttp.RouteResponder
 		expectedUsers []ofga.Entity
 		expectedErr   string
 	}{{
-		about: "passing in a maxDepth of less than 1 results in an error",
+		about: "passing in an invalid tuple with missing relation results in an error",
 		tuple: ofga.Tuple{
 			Relation: "",
 			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
 		},
-		maxDepth:    0,
-		expectedErr: "maxDepth must be greater than or equal to 1",
+		expectedErr: "invalid tuple for FindUsersByRelation.*missing tuple.Relation",
 	}, {
-		about: "passing in an invalid tuple for the Expand API returns an error",
-		tuple: ofga.Tuple{
-			Relation: "",
-			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
-		},
-		maxDepth:    1,
-		expectedErr: "invalid tuple for FindUsersByRelation.*",
-	}, {
-		about: "error when parsing an incorrectly formatted user entity is raised",
+		about: "passing in an invalid tuple with missing target results in an error",
 		tuple: ofga.Tuple{
 			Relation: "member",
-			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
+			Target:   &ofga.Entity{Kind: "organization", ID: ""},
 		},
-		maxDepth: 1,
-		mockRoutes: []*mockhttp.RouteResponder{{
-			Route: ExpandRoute,
-			MockResponse: openfga.ExpandResponse{
-				Tree: &openfga.UsersetTree{
-					Root: &openfga.Node{
-						Leaf: &openfga.Leaf{
-							Users: &openfga.Users{Users: []string{"userXYZ"}},
-						},
-					},
-				},
-			},
-		}},
-		expectedErr: "cannot parse entity .* from Expand response.*",
+		expectedErr: "invalid tuple for FindUsersByRelation.*missing tuple.Target",
+	}, {
+		about: "passing in an invalid tuple with target relation set returns an error",
+		tuple: ofga.Tuple{
+			Relation: "member",
+			Target:   &ofga.Entity{Kind: "organization", ID: "123", Relation: "admin"},
+		},
+		expectedErr: "invalid tuple for FindUsersByRelation.*tuple.Target.Relation must not be set",
 	}, {
 		about: "found users are returned successfully",
 		tuple: ofga.Tuple{
 			Relation: "member",
 			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
 		},
-		maxDepth: 1,
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              ExpandRoute,
+			Route:              ListUsersRoute,
 			ExpectedPathParams: []string{validFGAParams.StoreID},
-			ExpectedReqBody: openfga.ExpandRequest{
-				TupleKey: openfga.ExpandRequestTupleKey{
-					Relation: "member",
-					Object:   "organization:123",
+			ExpectedReqBody: openfga.ListUsersRequest{
+				Object: openfga.FgaObject{
+					Type: "organization",
+					Id:   "123",
 				},
-				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
-				Consistency:          openfga.CONSISTENCYPREFERENCE_UNSPECIFIED.Ptr(),
+				Relation:    "member",
+				UserFilters: []openfga.UserTypeFilter{{Type: "user"}},
 			},
-			MockResponse: openfga.ExpandResponse{
-				Tree: &openfga.UsersetTree{
-					Root: &openfga.Node{
-						Leaf: &openfga.Leaf{
-							Users: &openfga.Users{Users: []string{"user:XYZ", "user:ABC"}},
-						},
-					},
+			MockResponse: openfga.ListUsersResponse{
+				Users: []openfga.User{
+					{Object: &openfga.FgaObject{Type: "user", Id: "XYZ"}},
+					{Object: &openfga.FgaObject{Type: "user", Id: "ABC"}},
 				},
 			},
 		}},
@@ -2023,7 +2004,7 @@ func TestClientFindUsersByRelation(t *testing.T) {
 			}
 
 			// Execute the test.
-			users, err := client.FindUsersByRelation(ctx, test.tuple, test.maxDepth)
+			users, err := client.FindUsersByRelation(ctx, test.tuple)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
@@ -2031,547 +2012,6 @@ func TestClientFindUsersByRelation(t *testing.T) {
 			} else {
 				c.Assert(err, qt.IsNil)
 				c.Assert(users, qt.ContentEquals, test.expectedUsers)
-			}
-
-			// Validate that the mock routes were called as expected.
-			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
-			}
-		})
-	}
-}
-
-func TestClientFindUsersByRelationInternal(t *testing.T) {
-	c := qt.New(t)
-
-	ctx := context.Background()
-	client := getTestClient(c)
-
-	tests := []struct {
-		about         string
-		tuple         ofga.Tuple
-		maxDepth      int
-		mockRoutes    []*mockhttp.RouteResponder
-		expectedUsers map[string]bool
-		expectedErr   string
-	}{{
-		about: "passing in an invalid tuple for the Expand API returns an error",
-		tuple: ofga.Tuple{
-			Relation: "",
-			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
-		},
-		maxDepth:    0,
-		expectedErr: "invalid tuple for FindUsersByRelation.*",
-	}, {
-		about: "a maxDepth of 0 causes the function to return the unexpanded result",
-		tuple: ofga.Tuple{
-			Relation: "member",
-			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
-		},
-		maxDepth: 0,
-		expectedUsers: map[string]bool{
-			"organization:123#member": true,
-		},
-	}, {
-		about: "error raised by the underlying client is returned to the caller",
-		tuple: ofga.Tuple{
-			Relation: "member",
-			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
-		},
-		maxDepth: 1,
-		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              ExpandRoute,
-			MockResponseStatus: http.StatusInternalServerError,
-		}},
-		expectedErr: "cannot execute Expand request.*",
-	}, {
-		about: "error due to an invalid tree (without root) being returned is propagated forward",
-		tuple: ofga.Tuple{
-			Relation: "member",
-			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
-		},
-		maxDepth: 1,
-		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:        ExpandRoute,
-			MockResponse: openfga.ExpandResponse{Tree: &openfga.UsersetTree{Root: nil}},
-		}},
-		expectedErr: "tree from Expand response has no root",
-	}, {
-		about: "error expanding intermediate results is propagated forward",
-		tuple: ofga.Tuple{
-			Relation: "member",
-			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
-		},
-		maxDepth: 1,
-		mockRoutes: []*mockhttp.RouteResponder{{
-			Route: ExpandRoute,
-			MockResponse: openfga.ExpandResponse{
-				Tree: &openfga.UsersetTree{
-					Root: &openfga.Node{},
-				},
-			},
-		}},
-		expectedErr: "cannot expand the intermediate results.*",
-	}, {
-		about: "found users are returned successfully",
-		tuple: ofga.Tuple{
-			Relation: "member",
-			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
-		},
-		maxDepth: 1,
-		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              ExpandRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
-			ExpectedReqBody: openfga.ExpandRequest{
-				TupleKey: openfga.ExpandRequestTupleKey{
-					Relation: "member",
-					Object:   "organization:123",
-				},
-				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
-				Consistency:          openfga.CONSISTENCYPREFERENCE_UNSPECIFIED.Ptr(),
-			},
-			MockResponse: openfga.ExpandResponse{
-				Tree: &openfga.UsersetTree{
-					Root: &openfga.Node{
-						Leaf: &openfga.Leaf{
-							Users: &openfga.Users{Users: []string{"user:XYZ", "user:ABC"}},
-						},
-					},
-				},
-			},
-		}},
-		expectedUsers: map[string]bool{
-			"user:ABC": true,
-			"user:XYZ": true,
-		},
-	}}
-
-	for _, test := range tests {
-		test := test
-		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
-
-			// Execute the test.
-			users, err := ofga.FindUsersByRelationInternal(client, ctx, test.tuple, test.maxDepth)
-
-			if test.expectedErr != "" {
-				c.Assert(err, qt.ErrorMatches, test.expectedErr)
-				c.Assert(users, qt.IsNil)
-			} else {
-				c.Assert(err, qt.IsNil)
-				c.Assert(users, qt.ContentEquals, test.expectedUsers)
-			}
-
-			// Validate that the mock routes were called as expected.
-			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
-			}
-		})
-	}
-}
-
-func TestClientTraverseTree(t *testing.T) {
-	c := qt.New(t)
-
-	ctx := context.Background()
-	client := getTestClient(c)
-
-	tests := []struct {
-		about         string
-		node          openfga.Node
-		maxDepth      int
-		mockRoutes    []*mockhttp.RouteResponder
-		expectedUsers map[string]bool
-		expectedErr   string
-	}{{
-		about: "union node with an invalid childNode causes an error",
-		node: openfga.Node{
-			Union: &openfga.Nodes{
-				Nodes: []openfga.Node{
-					{
-						Leaf: &openfga.Leaf{
-							Users: &openfga.Users{Users: []string{"user:XYZ"}},
-						},
-					},
-					{},
-				},
-			},
-		},
-		maxDepth:    1,
-		expectedErr: "unknown node type",
-	}, {
-		about: "union node is expanded properly",
-		node: openfga.Node{
-			Union: &openfga.Nodes{
-				Nodes: []openfga.Node{{
-					Leaf: &openfga.Leaf{
-						Users: &openfga.Users{Users: []string{"user:XYZ"}},
-					},
-				}, {
-					Leaf: &openfga.Leaf{
-						Users: &openfga.Users{Users: []string{"user:ABC"}},
-					},
-				}},
-			},
-		},
-		maxDepth: 1,
-		expectedUsers: map[string]bool{
-			"user:XYZ": true,
-			"user:ABC": true,
-		},
-	}, {
-		about: "leaf node without any Users, Computed or TupleToUserSet fields raises an error",
-		node: openfga.Node{
-			Leaf: &openfga.Leaf{},
-		},
-		maxDepth:    1,
-		expectedErr: "unknown leaf type",
-	}, {
-		about: "leaf node with improper user representation raises an error",
-		node: openfga.Node{
-			Leaf: &openfga.Leaf{
-				Users: &openfga.Users{Users: []string{"user:XYZ##"}},
-			},
-		},
-		maxDepth:    1,
-		expectedErr: "unknown user representation.*",
-	}, {
-		about: "leaf node with proper user representation returns unexpanded result when maxDepth is zero",
-		node: openfga.Node{
-			Leaf: &openfga.Leaf{
-				Users: &openfga.Users{Users: []string{"organization:123#member"}},
-			},
-		},
-		maxDepth: 0,
-		expectedUsers: map[string]bool{
-			"organization:123#member": true,
-		},
-	}, {
-		about: "leaf node with proper user representation and maxDepth greater than zero returns expanded result",
-		node: openfga.Node{
-			Leaf: &openfga.Leaf{
-				Users: &openfga.Users{Users: []string{"organization:123#member"}},
-			},
-		},
-		maxDepth: 1,
-		mockRoutes: []*mockhttp.RouteResponder{{
-			Route: ExpandRoute,
-			MockResponse: openfga.ExpandResponse{
-				Tree: &openfga.UsersetTree{
-					Root: &openfga.Node{
-						Leaf: &openfga.Leaf{
-							Users: &openfga.Users{Users: []string{"user:ABC", "user:XYZ"}},
-						},
-					},
-				},
-			},
-		}},
-		expectedUsers: map[string]bool{
-			"user:ABC": true,
-			"user:XYZ": true,
-		},
-	}, {
-		about: "leaf node with computed node returns unexpanded result when maxDepth is zero",
-		node: openfga.Node{
-			Leaf: &openfga.Leaf{
-				Computed: &openfga.Computed{
-					Userset: "organization:123#member",
-				},
-			},
-		},
-		maxDepth: 0,
-		expectedUsers: map[string]bool{
-			"organization:123#member": true,
-		},
-	}, {
-		about: "leaf node with computed node returns expanded result when maxDepth is greater than zero",
-		node: openfga.Node{
-			Leaf: &openfga.Leaf{
-				Computed: &openfga.Computed{
-					Userset: "organization:123#member",
-				},
-			},
-		},
-		maxDepth: 1,
-		mockRoutes: []*mockhttp.RouteResponder{{
-			Route: ExpandRoute,
-			MockResponse: openfga.ExpandResponse{
-				Tree: &openfga.UsersetTree{
-					Root: &openfga.Node{
-						Leaf: &openfga.Leaf{
-							Users: &openfga.Users{Users: []string{"user:ABC", "user:XYZ"}},
-						},
-					},
-				},
-			},
-		}},
-		expectedUsers: map[string]bool{
-			"user:ABC": true,
-			"user:XYZ": true,
-		},
-	}, {
-		about: "leaf node with tupleToUserSet node returns unexpanded result when maxDepth is zero",
-		node: openfga.Node{
-			Leaf: &openfga.Leaf{
-				TupleToUserset: &openfga.UsersetTreeTupleToUserset{
-					Computed: []openfga.Computed{{
-						Userset: "organization:123#member",
-					}},
-				},
-			},
-		},
-		maxDepth: 0,
-		expectedUsers: map[string]bool{
-			"organization:123#member": true,
-		},
-	}, {
-		about: "leaf node with tupleToUserSet node returns expanded result when maxDepth greater than zero",
-		node: openfga.Node{
-			Leaf: &openfga.Leaf{
-				TupleToUserset: &openfga.UsersetTreeTupleToUserset{
-					Computed: []openfga.Computed{{
-						Userset: "organization:123#member",
-					}},
-				},
-			},
-		},
-		maxDepth: 1,
-		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              ExpandRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
-			MockResponse: openfga.ExpandResponse{
-				Tree: &openfga.UsersetTree{
-					Root: &openfga.Node{
-						Leaf: &openfga.Leaf{
-							Users: &openfga.Users{Users: []string{"user:ABC", "user:XYZ"}},
-						},
-					},
-				},
-			},
-		}},
-		expectedUsers: map[string]bool{
-			"user:ABC": true,
-			"user:XYZ": true,
-		},
-	}}
-
-	for _, test := range tests {
-		test := test
-		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
-
-			// Execute the test.
-			userMap, err := ofga.TraverseTree(client, ctx, &test.node, test.maxDepth)
-
-			if test.expectedErr != "" {
-				c.Assert(err, qt.ErrorMatches, test.expectedErr)
-				c.Assert(userMap, qt.IsNil)
-			} else {
-				c.Assert(err, qt.IsNil)
-				c.Assert(userMap, qt.ContentEquals, test.expectedUsers)
-			}
-
-			// Validate that the mock routes were called as expected.
-			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
-			}
-		})
-	}
-}
-
-func TestClientExpand(t *testing.T) {
-	c := qt.New(t)
-
-	ctx := context.Background()
-	client := getTestClient(c)
-
-	tests := []struct {
-		about         string
-		maxDepth      int
-		userStrings   []string
-		mockRoutes    []*mockhttp.RouteResponder
-		expectedUsers map[string]bool
-		expectedErr   string
-	}{{
-		about:         "calling expand on single user returns the user as is",
-		maxDepth:      1,
-		userStrings:   []string{"user:XYZ"},
-		expectedUsers: map[string]bool{"user:XYZ": true},
-	}, {
-		about:       "calling expand on an unknown user representation string results in an error",
-		maxDepth:    1,
-		userStrings: []string{"organization:123#member#XYZ"},
-		expectedErr: "unknown user representation.*",
-	}, {
-		about:       "error converting a userString into ofga.Tuple representation is returned to caller",
-		maxDepth:    1,
-		userStrings: []string{"organization123#member"},
-		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              ExpandRoute,
-			MockResponseStatus: http.StatusInternalServerError,
-		}},
-		expectedErr: "failed to parse tuple.*",
-	}, {
-		about:       "error from expanding a userSet is returned to the caller",
-		maxDepth:    1,
-		userStrings: []string{"organization:123#member"},
-		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              ExpandRoute,
-			MockResponseStatus: http.StatusInternalServerError,
-		}},
-		expectedErr: "failed to expand.*",
-	}, {
-		about:       "calling expand on a userSet returns the unexpanded results when maxDepth is zero",
-		maxDepth:    0,
-		userStrings: []string{"organization:123#member"},
-		expectedUsers: map[string]bool{
-			"organization:123#member": true,
-		},
-	}, {
-		about:       "calling expand on a userSet expands it to the individual users when maxDepth is greater than zero",
-		maxDepth:    1,
-		userStrings: []string{"organization:123#member"},
-		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              ExpandRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
-			MockResponse: openfga.ExpandResponse{
-				Tree: &openfga.UsersetTree{
-					Root: &openfga.Node{
-						Leaf: &openfga.Leaf{
-							Users: &openfga.Users{Users: []string{"user:ABC", "user:XYZ"}},
-						},
-					},
-				},
-			},
-		}},
-		expectedUsers: map[string]bool{
-			"user:ABC": true,
-			"user:XYZ": true,
-		},
-	}}
-
-	for _, test := range tests {
-		test := test
-		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
-
-			// Execute the test.
-			userMap, err := ofga.Expand(client, ctx, test.maxDepth, test.userStrings...)
-
-			if test.expectedErr != "" {
-				c.Assert(err, qt.ErrorMatches, test.expectedErr)
-				c.Assert(userMap, qt.IsNil)
-			} else {
-				c.Assert(err, qt.IsNil)
-				c.Assert(userMap, qt.ContentEquals, test.expectedUsers)
-			}
-
-			// Validate that the mock routes were called as expected.
-			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
-			}
-		})
-	}
-}
-
-func TestClientExpandComputed(t *testing.T) {
-	c := qt.New(t)
-
-	ctx := context.Background()
-	client := getTestClient(c)
-
-	tests := []struct {
-		about         string
-		maxDepth      int
-		leaf          openfga.Leaf
-		computed      []openfga.Computed
-		mockRoutes    []*mockhttp.RouteResponder
-		expectedUsers map[string]bool
-		expectedErr   string
-	}{{
-		about:       "calling expandComputed on a node without a userSet results in an error",
-		maxDepth:    1,
-		computed:    []openfga.Computed{{}},
-		expectedErr: "missing userSet",
-	}, {
-		about:    "calling expandComputed on a node with a userSet with an invalid representation results in an error",
-		maxDepth: 1,
-		computed: []openfga.Computed{{
-			Userset: "organization:123#member#admin",
-		}},
-		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              ExpandRoute,
-			MockResponseStatus: http.StatusInternalServerError,
-		}},
-		expectedErr: "unknown user representation.*",
-	}, {
-		about:    "calling expandComputed on a node with a userSet returns the unexpanded result when maxDepth is zero",
-		maxDepth: 0,
-		computed: []openfga.Computed{{
-			Userset: "organization:123#member",
-		}},
-		expectedUsers: map[string]bool{
-			"organization:123#member": true,
-		},
-	}, {
-		about:    "calling expandComputed on a node with a userSet expands the userSet when maxDepth is greater than zero",
-		maxDepth: 1,
-		computed: []openfga.Computed{{
-			Userset: "organization:123#member",
-		}},
-		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              ExpandRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
-			MockResponse: openfga.ExpandResponse{
-				Tree: &openfga.UsersetTree{
-					Root: &openfga.Node{
-						Leaf: &openfga.Leaf{
-							Users: &openfga.Users{Users: []string{"user:ABC", "user:XYZ"}},
-						},
-					},
-				},
-			},
-		}},
-		expectedUsers: map[string]bool{
-			"user:ABC": true,
-			"user:XYZ": true,
-		},
-	}}
-
-	for _, test := range tests {
-		test := test
-		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
-
-			// Execute the test.
-			userMap, err := ofga.ExpandComputed(client, ctx, test.maxDepth, test.leaf, test.computed...)
-
-			if test.expectedErr != "" {
-				c.Assert(err, qt.ErrorMatches, test.expectedErr)
-				c.Assert(userMap, qt.IsNil)
-			} else {
-				c.Assert(err, qt.IsNil)
-				c.Assert(userMap, qt.ContentEquals, test.expectedUsers)
 			}
 
 			// Validate that the mock routes were called as expected.
