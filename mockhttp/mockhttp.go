@@ -97,6 +97,7 @@ func (r *RouteResponder) Register(mux *http.ServeMux) {
 		r.req.Body = io.NopCloser(bytes.NewReader(body))
 		req.Body = io.NopCloser(bytes.NewReader(body))
 
+		// If not specified, assume that the response status is http.StatusOK.
 		if r.MockResponseStatus != 0 {
 			if http.StatusText(r.MockResponseStatus) == "" {
 				http.Error(w, fmt.Sprintf("invalid HTTP status code: %d", r.MockResponseStatus), http.StatusInternalServerError)
@@ -105,7 +106,12 @@ func (r *RouteResponder) Register(mux *http.ServeMux) {
 			w.WriteHeader(r.MockResponseStatus)
 		}
 
-		if req.Method == r.Route.Method && r.MockResponse != nil {
+		if req.Method != r.Route.Method {
+			http.Error(w, fmt.Sprintf("invalid HTTP method: got %s, want %s", req.Method, r.Route.Method), http.StatusMethodNotAllowed)
+			return
+		}
+
+		if r.MockResponse != nil {
 			w.Header().Set("Content-Type", "application/json")
 			err = json.NewEncoder(w).Encode(r.MockResponse)
 			if err != nil {
