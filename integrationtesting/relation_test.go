@@ -115,7 +115,7 @@ func TestIntegrationRemoveRelationIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create OpenFGA client: %v", err)
 	}
-	// Test: Remove relations not exisiting
+	// Test: Remove relations not existing
 	removeTuples := []ofga.Tuple{{
 		Object:   &ofga.Entity{Kind: "user", ID: "456"},
 		Relation: "editor",
@@ -131,5 +131,4 @@ func TestIntegrationRemoveRelationIdempotent(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Expected error when adding duplicate relations, but got none")
 	}
-
 }

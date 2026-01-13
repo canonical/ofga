@@ -7,7 +7,7 @@
 //
 // However, we can test this integration indirectly by using http mocks.
 // We know that our ofga wrapper communicates with the openfga client, which in
-// turn uses a http client to talk to the actual openfga instance, i.e.
+// turn uses an http client to talk to the actual openfga instance, i.e.
 //
 // 	ofga wrapper <---> openfga client <---> http client <---> openfga instance
 //
@@ -32,7 +32,6 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/jarcoal/httpmock"
 	openfga "github.com/openfga/go-sdk"
 	"github.com/openfga/go-sdk/telemetry"
 
@@ -40,20 +39,26 @@ import (
 	"github.com/canonical/ofga/mockhttp"
 )
 
+const (
+	storeIDPathParam = "storeID"
+	modelIDPathParam = "modelID"
+	ofgaServerIP     = "127.0.0.1"
+	ofgaServerPort   = 8080
+)
+
 var (
-	CheckRoute          = mockhttp.Route{Method: http.MethodPost, Endpoint: `=~/stores/(\w+)/check\z`}
+	CheckRoute          = mockhttp.Route{Method: http.MethodPost, Endpoint: `/stores/{storeID}/check`}
 	CreateStoreRoute    = mockhttp.Route{Method: http.MethodPost, Endpoint: "/stores"}
-	ExpandRoute         = mockhttp.Route{Method: http.MethodPost, Endpoint: `=~/stores/(\w+)/expand\z`}
-	GetStoreRoute       = mockhttp.Route{Method: http.MethodGet, Endpoint: `=~/stores/(\w+)\z`}
-	ListObjectsRoute    = mockhttp.Route{Method: http.MethodPost, Endpoint: `=~/stores/(\w+)/list-objects\z`}
+	GetStoreRoute       = mockhttp.Route{Method: http.MethodGet, Endpoint: `/stores/{storeID}`}
+	ListObjectsRoute    = mockhttp.Route{Method: http.MethodPost, Endpoint: `/stores/{storeID}/list-objects`}
 	ListStoreRoute      = mockhttp.Route{Method: http.MethodGet, Endpoint: "/stores"}
-	ListUsersRoute      = mockhttp.Route{Method: http.MethodPost, Endpoint: `=~/stores/(\w+)/list-users\z`}
-	ReadRoute           = mockhttp.Route{Method: http.MethodPost, Endpoint: `=~/stores/(\w+)/read\z`}
-	ReadAuthModelRoute  = mockhttp.Route{Method: http.MethodGet, Endpoint: `=~/stores/(\w+)/authorization-models/(\w+)\z`}
-	ReadAuthModelsRoute = mockhttp.Route{Method: http.MethodGet, Endpoint: `=~/stores/(\w+)/authorization-models\z`}
-	ReadChangesRoute    = mockhttp.Route{Method: http.MethodGet, Endpoint: `=~/stores/(\w+)/changes\z`}
-	WriteRoute          = mockhttp.Route{Method: http.MethodPost, Endpoint: `=~/stores/(\w+)/write\z`}
-	WriteAuthModelRoute = mockhttp.Route{Method: http.MethodPost, Endpoint: `=~/stores/(\w+)/authorization-models\z`}
+	ListUsersRoute      = mockhttp.Route{Method: http.MethodPost, Endpoint: `/stores/{storeID}/list-users`}
+	ReadRoute           = mockhttp.Route{Method: http.MethodPost, Endpoint: `/stores/{storeID}/read`}
+	ReadAuthModelRoute  = mockhttp.Route{Method: http.MethodGet, Endpoint: `/stores/{storeID}/authorization-models/{modelID}`}
+	ReadAuthModelsRoute = mockhttp.Route{Method: http.MethodGet, Endpoint: `/stores/{storeID}/authorization-models`}
+	ReadChangesRoute    = mockhttp.Route{Method: http.MethodGet, Endpoint: `/stores/{storeID}/changes`}
+	WriteRoute          = mockhttp.Route{Method: http.MethodPost, Endpoint: `/stores/{storeID}/write`}
+	WriteAuthModelRoute = mockhttp.Route{Method: http.MethodPost, Endpoint: `/stores/{storeID}/authorization-models`}
 )
 
 var validFGAParams = ofga.OpenFGAParams{
@@ -69,9 +74,6 @@ var validFGAParams = ofga.OpenFGAParams{
 // up all the mock http routes required by the client during the initialization
 // process.
 func getTestClient(c *qt.C) *ofga.Client {
-	httpmock.Activate()
-	defer httpmock.DeactivateAndReset()
-
 	clientCreationRoutes := []*mockhttp.RouteResponder{{
 		Route: ListStoreRoute,
 	}, {
@@ -88,30 +90,32 @@ func getTestClient(c *qt.C) *ofga.Client {
 		}},
 	}}
 
-	for _, cr := range clientCreationRoutes {
-		httpmock.RegisterResponder(cr.Route.Method, cr.Route.Endpoint, cr.Generate())
-	}
+	mux := http.NewServeMux()
+	ts := mockhttp.CreateMockServerWithResponders(mux, c, ofgaServerIP, ofgaServerPort, clientCreationRoutes)
+	ts.Start()
+	defer ts.Close()
 
 	// Create a client.
-	newClient, err := ofga.NewClient(context.Background(), validFGAParams)
+	newClient, err := ofga.NewClient(c.Context(), validFGAParams)
 	c.Assert(err, qt.IsNil)
 	c.Assert(newClient.AuthModelID(), qt.Equals, validFGAParams.AuthModelID)
 	c.Assert(newClient.StoreID(), qt.Equals, validFGAParams.StoreID)
 
 	for _, cr := range clientCreationRoutes {
-		cr.Finish(c)
+		cr.Validate(c)
 	}
 	return newClient
 }
 
 func TestNewClient(t *testing.T) {
 	c := qt.New(t)
-	ctx := context.Background()
 
 	tests := []struct {
-		about               string
-		params              ofga.OpenFGAParams
-		mockRoutes          []*mockhttp.RouteResponder
+		about string
+
+		params     ofga.OpenFGAParams
+		mockRoutes []*mockhttp.RouteResponder
+
 		expectedErr         string
 		expectedAuthModelID string
 	}{{
@@ -195,12 +199,17 @@ func TestNewClient(t *testing.T) {
 		mockRoutes: []*mockhttp.RouteResponder{{
 			Route: ListStoreRoute,
 		}, {
-			Route:              GetStoreRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
-			MockResponse:       openfga.GetStoreResponse{Name: "Test Store"},
+			Route: GetStoreRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
+			MockResponse: openfga.GetStoreResponse{Name: "Test Store"},
 		}, {
-			Route:              ReadAuthModelRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID, validFGAParams.AuthModelID},
+			Route: ReadAuthModelRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+				modelIDPathParam: validFGAParams.AuthModelID,
+			},
 			MockResponse: openfga.ReadAuthorizationModelResponse{
 				AuthorizationModel: &openfga.AuthorizationModel{
 					Id: validFGAParams.AuthModelID,
@@ -222,12 +231,17 @@ func TestNewClient(t *testing.T) {
 		mockRoutes: []*mockhttp.RouteResponder{{
 			Route: ListStoreRoute,
 		}, {
-			Route:              GetStoreRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
-			MockResponse:       openfga.GetStoreResponse{Name: "Test Store"},
+			Route: GetStoreRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
+			MockResponse: openfga.GetStoreResponse{Name: "Test Store"},
 		}, {
-			Route:              ReadAuthModelRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID, validFGAParams.AuthModelID},
+			Route: ReadAuthModelRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+				modelIDPathParam: validFGAParams.AuthModelID,
+			},
 			MockResponse: openfga.ReadAuthorizationModelResponse{
 				AuthorizationModel: &openfga.AuthorizationModel{
 					Id: validFGAParams.AuthModelID,
@@ -249,12 +263,17 @@ func TestNewClient(t *testing.T) {
 		mockRoutes: []*mockhttp.RouteResponder{{
 			Route: ListStoreRoute,
 		}, {
-			Route:              GetStoreRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
-			MockResponse:       openfga.GetStoreResponse{Name: "Test Store"},
+			Route: GetStoreRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
+			MockResponse: openfga.GetStoreResponse{Name: "Test Store"},
 		}, {
-			Route:              ReadAuthModelRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID, validFGAParams.AuthModelID},
+			Route: ReadAuthModelRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+				modelIDPathParam: validFGAParams.AuthModelID,
+			},
 			MockResponse: openfga.ReadAuthorizationModelResponse{
 				AuthorizationModel: &openfga.AuthorizationModel{
 					Id: validFGAParams.AuthModelID,
@@ -264,17 +283,15 @@ func TestNewClient(t *testing.T) {
 		expectedAuthModelID: validFGAParams.AuthModelID,
 	}}
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
 			// Set up and configure the http mocks.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
+			mux := http.NewServeMux()
+			ts := mockhttp.CreateMockServerWithResponders(mux, c, ofgaServerIP, ofgaServerPort, test.mockRoutes)
+			ts.Start()
+			defer ts.Close()
 
 			// Execute the test.
-			client, err := ofga.NewClient(ctx, test.params)
+			client, err := ofga.NewClient(c.Context(), test.params)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
@@ -286,7 +303,7 @@ func TestNewClient(t *testing.T) {
 
 			// Validate that the mock routes were called as expected.
 			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
+				mr.Validate(c)
 			}
 		})
 	}
@@ -294,7 +311,7 @@ func TestNewClient(t *testing.T) {
 
 func TestClientUpdateStoreIDAndAuthModelID(t *testing.T) {
 	c := qt.New(t)
-	ctx := context.Background()
+	client := getTestClient(c)
 
 	tests := []struct {
 		about string
@@ -305,7 +322,9 @@ func TestClientUpdateStoreIDAndAuthModelID(t *testing.T) {
 		updateStoreID     string
 		updateAuthModelID string
 	}{{
-		about: "success: no configuration change",
+		about:             "success: no configuration change",
+		updateAuthModelID: validFGAParams.AuthModelID,
+		updateStoreID:     validFGAParams.StoreID,
 		tuples: []ofga.Tuple{
 			{
 				Object:   &entityTestUser,
@@ -314,8 +333,10 @@ func TestClientUpdateStoreIDAndAuthModelID(t *testing.T) {
 			},
 		},
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              WriteRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
+			Route: WriteRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
 			ExpectedReqBody: openfga.WriteRequest{
 				Writes: openfga.NewWriteRequestWrites([]openfga.TupleKey{{
 					User:     entityTestUser.String(),
@@ -326,8 +347,9 @@ func TestClientUpdateStoreIDAndAuthModelID(t *testing.T) {
 			},
 		}},
 	}, {
-		about:         "success: storeID changed",
-		updateStoreID: "1TEST111111111111111111111",
+		about:             "success: storeID changed",
+		updateStoreID:     "1TEST111111111111111111111",
+		updateAuthModelID: validFGAParams.AuthModelID,
 		tuples: []ofga.Tuple{
 			{
 				Object:   &entityTestUser,
@@ -336,8 +358,10 @@ func TestClientUpdateStoreIDAndAuthModelID(t *testing.T) {
 			},
 		},
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              WriteRoute,
-			ExpectedPathParams: []string{"1TEST111111111111111111111"},
+			Route: WriteRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: "1TEST111111111111111111111",
+			},
 			ExpectedReqBody: openfga.WriteRequest{
 				Writes: openfga.NewWriteRequestWrites([]openfga.TupleKey{{
 					User:     entityTestUser.String(),
@@ -350,6 +374,7 @@ func TestClientUpdateStoreIDAndAuthModelID(t *testing.T) {
 	}, {
 		about:             "success: authModelID changed",
 		updateAuthModelID: "AuthModel3000",
+		updateStoreID:     validFGAParams.StoreID,
 		tuples: []ofga.Tuple{
 			{
 				Object:   &entityTestUser,
@@ -358,8 +383,10 @@ func TestClientUpdateStoreIDAndAuthModelID(t *testing.T) {
 			},
 		},
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              WriteRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
+			Route: WriteRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
 			ExpectedReqBody: openfga.WriteRequest{
 				Writes: openfga.NewWriteRequestWrites([]openfga.TupleKey{{
 					User:     entityTestUser.String(),
@@ -381,8 +408,10 @@ func TestClientUpdateStoreIDAndAuthModelID(t *testing.T) {
 			},
 		},
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              WriteRoute,
-			ExpectedPathParams: []string{"1TEST111111111111111111111"},
+			Route: WriteRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: "1TEST111111111111111111111",
+			},
 			ExpectedReqBody: openfga.WriteRequest{
 				Writes: openfga.NewWriteRequestWrites([]openfga.TupleKey{{
 					User:     entityTestUser.String(),
@@ -394,16 +423,12 @@ func TestClientUpdateStoreIDAndAuthModelID(t *testing.T) {
 		}},
 	}}
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
-			client := getTestClient(c)
-
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
+			// Set up and configure the http mocks.
+			mux := http.NewServeMux()
+			ts := mockhttp.CreateMockServerWithResponders(mux, c, ofgaServerIP, ofgaServerPort, test.mockRoutes)
+			ts.Start()
+			defer ts.Close()
 
 			// Execute the test.
 			if test.updateStoreID != "" {
@@ -414,12 +439,12 @@ func TestClientUpdateStoreIDAndAuthModelID(t *testing.T) {
 				client.SetAuthModelID(test.updateAuthModelID)
 				c.Assert(client.AuthModelID(), qt.Equals, test.updateAuthModelID)
 			}
-			err := client.AddRelation(ctx, test.tuples...)
+			err := client.AddRelation(c.Context(), test.tuples...)
 			c.Assert(err, qt.IsNil)
 
 			// Validate that the mock routes were called as expected.
 			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
+				mr.Validate(c)
 			}
 		})
 	}
@@ -427,8 +452,6 @@ func TestClientUpdateStoreIDAndAuthModelID(t *testing.T) {
 
 func TestClientAddRelation(t *testing.T) {
 	c := qt.New(t)
-
-	ctx := context.Background()
 	client := getTestClient(c)
 
 	tests := []struct {
@@ -460,8 +483,10 @@ func TestClientAddRelation(t *testing.T) {
 			},
 		},
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              WriteRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
+			Route: WriteRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
 			ExpectedReqBody: openfga.WriteRequest{
 				Writes: openfga.NewWriteRequestWrites([]openfga.TupleKey{{
 					User:     entityTestUser.String(),
@@ -481,8 +506,10 @@ func TestClientAddRelation(t *testing.T) {
 			},
 		},
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              WriteRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
+			Route: WriteRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
 			ExpectedReqBody: openfga.WriteRequest{
 				Writes: openfga.NewWriteRequestWrites([]openfga.TupleKey{{
 					User:     publicEntityUser.String(),
@@ -495,17 +522,15 @@ func TestClientAddRelation(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
+			// Set up and configure the http mocks.
+			mux := http.NewServeMux()
+			ts := mockhttp.CreateMockServerWithResponders(mux, c, ofgaServerIP, ofgaServerPort, test.mockRoutes)
+			ts.Start()
+			defer ts.Close()
 
 			// Execute the test.
-			err := client.AddRelation(ctx, test.tuples...)
+			err := client.AddRelation(c.Context(), test.tuples...)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
@@ -515,7 +540,7 @@ func TestClientAddRelation(t *testing.T) {
 
 			// Validate that the mock routes were called as expected.
 			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
+				mr.Validate(c)
 			}
 		})
 	}
@@ -523,8 +548,6 @@ func TestClientAddRelation(t *testing.T) {
 
 func TestClientAddRelationIdempotent(t *testing.T) {
 	c := qt.New(t)
-
-	ctx := context.Background()
 	client := getTestClient(c)
 
 	tests := []struct {
@@ -556,8 +579,10 @@ func TestClientAddRelationIdempotent(t *testing.T) {
 			},
 		},
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              WriteRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
+			Route: WriteRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
 			ExpectedReqBody: openfga.WriteRequest{
 				Writes: &openfga.WriteRequestWrites{
 					TupleKeys: []openfga.TupleKey{{
@@ -574,15 +599,14 @@ func TestClientAddRelationIdempotent(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
+			// Set up and configure the http mocks.
+			mux := http.NewServeMux()
+			ts := mockhttp.CreateMockServerWithResponders(mux, c, ofgaServerIP, ofgaServerPort, test.mockRoutes)
+			ts.Start()
+			defer ts.Close()
 
 			// Execute the test.
-			err := client.AddRelationIdempotent(ctx, test.tuples...)
+			err := client.AddRelationIdempotent(c.Context(), test.tuples...)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
@@ -592,7 +616,7 @@ func TestClientAddRelationIdempotent(t *testing.T) {
 
 			// Validate that the mock routes were called as expected.
 			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
+				mr.Validate(c)
 			}
 		})
 	}
@@ -600,8 +624,6 @@ func TestClientAddRelationIdempotent(t *testing.T) {
 
 func TestClientCheckRelationMethods(t *testing.T) {
 	c := qt.New(t)
-
-	ctx := context.Background()
 	client := getTestClient(c)
 
 	tests := []struct {
@@ -659,8 +681,10 @@ func TestClientCheckRelationMethods(t *testing.T) {
 			Target:   &entityTestContract,
 		},
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              CheckRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
+			Route: CheckRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
 			ExpectedReqBody: openfga.CheckRequest{
 				TupleKey: openfga.CheckRequestTupleKey{
 					User:     entityTestUser.String(),
@@ -692,8 +716,10 @@ func TestClientCheckRelationMethods(t *testing.T) {
 			},
 		},
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              CheckRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
+			Route: CheckRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
 			ExpectedReqBody: openfga.CheckRequest{
 				TupleKey: openfga.CheckRequestTupleKey{
 					User:     entityTestUser.String(),
@@ -763,8 +789,10 @@ func TestClientCheckRelationMethods(t *testing.T) {
 			Target:   &entityTestContract,
 		},
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              CheckRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
+			Route: CheckRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
 			ExpectedReqBody: openfga.CheckRequest{
 				TupleKey: openfga.CheckRequestTupleKey{
 					User:     entityTestUser.String(),
@@ -796,8 +824,10 @@ func TestClientCheckRelationMethods(t *testing.T) {
 			},
 		},
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              CheckRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
+			Route: CheckRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
 			ExpectedReqBody: openfga.CheckRequest{
 				TupleKey: openfga.CheckRequestTupleKey{
 					User:     entityTestUser.String(),
@@ -823,17 +853,15 @@ func TestClientCheckRelationMethods(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
+			// Set up and configure the http mocks.
+			mux := http.NewServeMux()
+			ts := mockhttp.CreateMockServerWithResponders(mux, c, ofgaServerIP, ofgaServerPort, test.mockRoutes)
+			ts.Start()
+			defer ts.Close()
 
 			// Execute the test.
-			allowed, err := test.function(ctx, test.tuple, test.contextualTuples...)
+			allowed, err := test.function(c.Context(), test.tuple, test.contextualTuples...)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
@@ -844,7 +872,7 @@ func TestClientCheckRelationMethods(t *testing.T) {
 
 			// Validate that the mock routes were called as expected.
 			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
+				mr.Validate(c)
 			}
 		})
 	}
@@ -852,8 +880,6 @@ func TestClientCheckRelationMethods(t *testing.T) {
 
 func TestClientRemoveRelation(t *testing.T) {
 	c := qt.New(t)
-
-	ctx := context.Background()
 	client := getTestClient(c)
 
 	tests := []struct {
@@ -881,8 +907,10 @@ func TestClientRemoveRelation(t *testing.T) {
 			Target:   &entityTestContract,
 		}},
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              WriteRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
+			Route: WriteRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
 			ExpectedReqBody: openfga.WriteRequest{
 				Deletes: openfga.NewWriteRequestDeletes([]openfga.TupleKeyWithoutCondition{{
 					User:     entityTestUser.String(),
@@ -895,17 +923,15 @@ func TestClientRemoveRelation(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
+			// Set up and configure the http mocks.
+			mux := http.NewServeMux()
+			ts := mockhttp.CreateMockServerWithResponders(mux, c, ofgaServerIP, ofgaServerPort, test.mockRoutes)
+			ts.Start()
+			defer ts.Close()
 
 			// Execute the test.
-			err := client.RemoveRelation(ctx, test.tuples...)
+			err := client.RemoveRelation(c.Context(), test.tuples...)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
@@ -915,7 +941,7 @@ func TestClientRemoveRelation(t *testing.T) {
 
 			// Validate that the mock routes were called as expected.
 			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
+				mr.Validate(c)
 			}
 		})
 	}
@@ -923,8 +949,6 @@ func TestClientRemoveRelation(t *testing.T) {
 
 func TestClientRemoveRelationIdempotent(t *testing.T) {
 	c := qt.New(t)
-
-	ctx := context.Background()
 	client := getTestClient(c)
 
 	tests := []struct {
@@ -952,8 +976,10 @@ func TestClientRemoveRelationIdempotent(t *testing.T) {
 			Target:   &entityTestContract,
 		}},
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              WriteRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
+			Route: WriteRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
 			ExpectedReqBody: openfga.WriteRequest{
 				Deletes: &openfga.WriteRequestDeletes{
 					TupleKeys: []openfga.TupleKeyWithoutCondition{{
@@ -970,15 +996,14 @@ func TestClientRemoveRelationIdempotent(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
+			// Set up and configure the http mocks.
+			mux := http.NewServeMux()
+			ts := mockhttp.CreateMockServerWithResponders(mux, c, ofgaServerIP, ofgaServerPort, test.mockRoutes)
+			ts.Start()
+			defer ts.Close()
 
 			// Execute the test.
-			err := client.RemoveRelationIdempotent(ctx, test.tuples...)
+			err := client.RemoveRelationIdempotent(c.Context(), test.tuples...)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
@@ -988,7 +1013,7 @@ func TestClientRemoveRelationIdempotent(t *testing.T) {
 
 			// Validate that the mock routes were called as expected.
 			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
+				mr.Validate(c)
 			}
 		})
 	}
@@ -996,8 +1021,6 @@ func TestClientRemoveRelationIdempotent(t *testing.T) {
 
 func TestClientAddRemoveRelations(t *testing.T) {
 	c := qt.New(t)
-
-	ctx := context.Background()
 	client := getTestClient(c)
 
 	tests := []struct {
@@ -1036,8 +1059,10 @@ func TestClientAddRemoveRelations(t *testing.T) {
 			Target:   &entityTestContract,
 		}},
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              WriteRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
+			Route: WriteRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
 			ExpectedReqBody: openfga.WriteRequest{
 				Writes: openfga.NewWriteRequestWrites([]openfga.TupleKey{{
 					User:     entityTestUser.String(),
@@ -1055,17 +1080,15 @@ func TestClientAddRemoveRelations(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
+			// Set up and configure the http mocks.
+			mux := http.NewServeMux()
+			ts := mockhttp.CreateMockServerWithResponders(mux, c, ofgaServerIP, ofgaServerPort, test.mockRoutes)
+			ts.Start()
+			defer ts.Close()
 
 			// Execute the test.
-			err := client.AddRemoveRelations(ctx, test.addTuples, test.removeTuples)
+			err := client.AddRemoveRelations(c.Context(), test.addTuples, test.removeTuples)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
@@ -1075,7 +1098,7 @@ func TestClientAddRemoveRelations(t *testing.T) {
 
 			// Validate that the mock routes were called as expected.
 			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
+				mr.Validate(c)
 			}
 		})
 	}
@@ -1083,8 +1106,6 @@ func TestClientAddRemoveRelations(t *testing.T) {
 
 func TestClientAddRemoveRelationsIdempotent(t *testing.T) {
 	c := qt.New(t)
-
-	ctx := context.Background()
 	client := getTestClient(c)
 
 	tests := []struct {
@@ -1123,8 +1144,10 @@ func TestClientAddRemoveRelationsIdempotent(t *testing.T) {
 			Target:   &entityTestContract,
 		}},
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              WriteRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
+			Route: WriteRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
 			ExpectedReqBody: openfga.WriteRequest{
 				Writes: &openfga.WriteRequestWrites{
 					TupleKeys: []openfga.TupleKey{{
@@ -1149,15 +1172,14 @@ func TestClientAddRemoveRelationsIdempotent(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
+			// Set up and configure the http mocks.
+			mux := http.NewServeMux()
+			ts := mockhttp.CreateMockServerWithResponders(mux, c, ofgaServerIP, ofgaServerPort, test.mockRoutes)
+			ts.Start()
+			defer ts.Close()
 
 			// Execute the test.
-			err := client.AddRemoveRelationsIdempotent(ctx, test.addTuples, test.removeTuples)
+			err := client.AddRemoveRelationsIdempotent(c.Context(), test.addTuples, test.removeTuples)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
@@ -1167,7 +1189,7 @@ func TestClientAddRemoveRelationsIdempotent(t *testing.T) {
 
 			// Validate that the mock routes were called as expected.
 			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
+				mr.Validate(c)
 			}
 		})
 	}
@@ -1175,8 +1197,6 @@ func TestClientAddRemoveRelationsIdempotent(t *testing.T) {
 
 func TestClientCreateStore(t *testing.T) {
 	c := qt.New(t)
-
-	ctx := context.Background()
 	client := getTestClient(c)
 
 	tests := []struct {
@@ -1206,17 +1226,15 @@ func TestClientCreateStore(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
+			// Set up and configure the http mocks.
+			mux := http.NewServeMux()
+			ts := mockhttp.CreateMockServerWithResponders(mux, c, ofgaServerIP, ofgaServerPort, test.mockRoutes)
+			ts.Start()
+			defer ts.Close()
 
 			// Execute the test.
-			storeID, err := client.CreateStore(ctx, test.storeName)
+			storeID, err := client.CreateStore(c.Context(), test.storeName)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
@@ -1228,7 +1246,7 @@ func TestClientCreateStore(t *testing.T) {
 
 			// Validate that the mock routes were called as expected.
 			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
+				mr.Validate(c)
 			}
 		})
 	}
@@ -1236,9 +1254,8 @@ func TestClientCreateStore(t *testing.T) {
 
 func TestClientListStores(t *testing.T) {
 	c := qt.New(t)
-
-	ctx := context.Background()
 	client := getTestClient(c)
+
 	createdAt := time.Now().AddDate(0, 0, -3)
 	updatedAt := createdAt.AddDate(0, 0, 1)
 	stores := []openfga.Store{{
@@ -1288,17 +1305,15 @@ func TestClientListStores(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
+			// Set up and configure the http mocks.
+			mux := http.NewServeMux()
+			ts := mockhttp.CreateMockServerWithResponders(mux, c, ofgaServerIP, ofgaServerPort, test.mockRoutes)
+			ts.Start()
+			defer ts.Close()
 
 			// Execute the test.
-			lsr, err := client.ListStores(ctx, test.pageSize, test.continuationToken)
+			lsr, err := client.ListStores(c.Context(), test.pageSize, test.continuationToken)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
@@ -1312,7 +1327,7 @@ func TestClientListStores(t *testing.T) {
 
 			// Validate that the mock routes were called as expected.
 			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
+				mr.Validate(c)
 			}
 		})
 	}
@@ -1320,9 +1335,8 @@ func TestClientListStores(t *testing.T) {
 
 func TestClientReadChanges(t *testing.T) {
 	c := qt.New(t)
-
-	ctx := context.Background()
 	client := getTestClient(c)
+
 	writeOp := openfga.TUPLEOPERATION_WRITE
 	timestamp := time.Now()
 	changes := []openfga.TupleChange{{
@@ -1356,8 +1370,10 @@ func TestClientReadChanges(t *testing.T) {
 		pageSize:          25,
 		continuationToken: "SimulatedToken",
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              ReadChangesRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
+			Route: ReadChangesRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
 			ExpectedReqQueryParams: url.Values{
 				"page_size":          []string{"25"},
 				"continuation_token": []string{"SimulatedToken"},
@@ -1375,17 +1391,15 @@ func TestClientReadChanges(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
+			// Set up and configure the http mocks.
+			mux := http.NewServeMux()
+			ts := mockhttp.CreateMockServerWithResponders(mux, c, ofgaServerIP, ofgaServerPort, test.mockRoutes)
+			ts.Start()
+			defer ts.Close()
 
 			// Execute the test.
-			changesResponse, err := client.ReadChanges(ctx, test.entityType, test.pageSize, test.continuationToken)
+			changesResponse, err := client.ReadChanges(c.Context(), test.entityType, test.pageSize, test.continuationToken)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
@@ -1397,7 +1411,7 @@ func TestClientReadChanges(t *testing.T) {
 
 			// Validate that the mock routes were called as expected.
 			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
+				mr.Validate(c)
 			}
 		})
 	}
@@ -1448,7 +1462,6 @@ func TestAuthModelFromJson(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
 			// Execute the test.
 			model, err := ofga.AuthModelFromJSON(test.authModelJson)
@@ -1466,8 +1479,6 @@ func TestAuthModelFromJson(t *testing.T) {
 
 func TestClientCreateAuthModel(t *testing.T) {
 	c := qt.New(t)
-
-	ctx := context.Background()
 	client := getTestClient(c)
 
 	tests := []struct {
@@ -1488,8 +1499,10 @@ func TestClientCreateAuthModel(t *testing.T) {
 		about:     "auth model is created successfully",
 		authModel: &authModel,
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              WriteAuthModelRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
+			Route: WriteAuthModelRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
 			ExpectedReqBody: &openfga.WriteAuthorizationModelRequest{
 				TypeDefinitions: authModel.TypeDefinitions,
 				SchemaVersion:   authModel.SchemaVersion,
@@ -1500,17 +1513,15 @@ func TestClientCreateAuthModel(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
+			// Set up and configure the http mocks.
+			mux := http.NewServeMux()
+			ts := mockhttp.CreateMockServerWithResponders(mux, c, ofgaServerIP, ofgaServerPort, test.mockRoutes)
+			ts.Start()
+			defer ts.Close()
 
 			// Execute the test.
-			authModelID, err := client.CreateAuthModel(ctx, test.authModel)
+			authModelID, err := client.CreateAuthModel(c.Context(), test.authModel)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
@@ -1522,7 +1533,7 @@ func TestClientCreateAuthModel(t *testing.T) {
 
 			// Validate that the mock routes were called as expected.
 			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
+				mr.Validate(c)
 			}
 		})
 	}
@@ -1530,8 +1541,6 @@ func TestClientCreateAuthModel(t *testing.T) {
 
 func TestClientListAuthModels(t *testing.T) {
 	c := qt.New(t)
-
-	ctx := context.Background()
 	client := getTestClient(c)
 
 	authModelsResp := []openfga.AuthorizationModel{{
@@ -1559,8 +1568,10 @@ func TestClientListAuthModels(t *testing.T) {
 		pageSize:          25,
 		continuationToken: "SimulatedToken",
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              ReadAuthModelsRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
+			Route: ReadAuthModelsRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
 			ExpectedReqQueryParams: url.Values{
 				"page_size":          []string{"25"},
 				"continuation_token": []string{"SimulatedToken"},
@@ -1577,17 +1588,15 @@ func TestClientListAuthModels(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
+			// Set up and configure the http mocks.
+			mux := http.NewServeMux()
+			ts := mockhttp.CreateMockServerWithResponders(mux, c, ofgaServerIP, ofgaServerPort, test.mockRoutes)
+			ts.Start()
+			defer ts.Close()
 
 			// Execute the test.
-			modelsResponse, err := client.ListAuthModels(ctx, test.pageSize, test.continuationToken)
+			modelsResponse, err := client.ListAuthModels(c.Context(), test.pageSize, test.continuationToken)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
@@ -1599,7 +1608,7 @@ func TestClientListAuthModels(t *testing.T) {
 
 			// Validate that the mock routes were called as expected.
 			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
+				mr.Validate(c)
 			}
 		})
 	}
@@ -1607,8 +1616,6 @@ func TestClientListAuthModels(t *testing.T) {
 
 func TestClientGetAuthModel(t *testing.T) {
 	c := qt.New(t)
-
-	ctx := context.Background()
 	client := getTestClient(c)
 
 	authModelResp := openfga.AuthorizationModel{
@@ -1635,8 +1642,11 @@ func TestClientGetAuthModel(t *testing.T) {
 		about:       "auth model is returned successfully",
 		authModelID: validFGAParams.AuthModelID,
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              ReadAuthModelRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID, validFGAParams.AuthModelID},
+			Route: ReadAuthModelRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+				modelIDPathParam: validFGAParams.AuthModelID,
+			},
 			MockResponse: openfga.ReadAuthorizationModelResponse{
 				AuthorizationModel: &authModelResp,
 			},
@@ -1645,17 +1655,15 @@ func TestClientGetAuthModel(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
+			// Set up and configure the http mocks.
+			mux := http.NewServeMux()
+			ts := mockhttp.CreateMockServerWithResponders(mux, c, ofgaServerIP, ofgaServerPort, test.mockRoutes)
+			ts.Start()
+			defer ts.Close()
 
 			// Execute the test.
-			model, err := client.GetAuthModel(ctx, test.authModelID)
+			model, err := client.GetAuthModel(c.Context(), test.authModelID)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
@@ -1667,7 +1675,7 @@ func TestClientGetAuthModel(t *testing.T) {
 
 			// Validate that the mock routes were called as expected.
 			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
+				mr.Validate(c)
 			}
 		})
 	}
@@ -1714,7 +1722,6 @@ func TestValidateTupleForFindMatchingTuples(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
 			// Execute the test.
 			err := ofga.ValidateTupleForFindMatchingTuples(test.tuple)
@@ -1730,10 +1737,7 @@ func TestValidateTupleForFindMatchingTuples(t *testing.T) {
 
 func TestClientFindMatchingTuples(t *testing.T) {
 	c := qt.New(t)
-
-	ctx := context.Background()
 	client := getTestClient(c)
-
 	now := time.Now()
 	future := now.AddDate(0, 0, 1)
 
@@ -1826,8 +1830,10 @@ func TestClientFindMatchingTuples(t *testing.T) {
 		continuationToken: "SimulatedToken",
 		pageSize:          50,
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              ReadRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
+			Route: ReadRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
 			ExpectedReqBody: openfga.ReadRequest{
 				TupleKey:          &openfga.ReadRequestTupleKey{User: openfga.PtrString("user:XYZ"), Relation: openfga.PtrString("member"), Object: openfga.PtrString("organization:123")},
 				PageSize:          openfga.PtrInt32(50),
@@ -1842,17 +1848,15 @@ func TestClientFindMatchingTuples(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
+			// Set up and configure the http mocks.
+			mux := http.NewServeMux()
+			ts := mockhttp.CreateMockServerWithResponders(mux, c, ofgaServerIP, ofgaServerPort, test.mockRoutes)
+			ts.Start()
+			defer ts.Close()
 
 			// Execute the test.
-			tuples, cToken, err := client.FindMatchingTuples(ctx, test.tuple, test.pageSize, test.continuationToken)
+			tuples, cToken, err := client.FindMatchingTuples(c.Context(), test.tuple, test.pageSize, test.continuationToken)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
@@ -1866,7 +1870,7 @@ func TestClientFindMatchingTuples(t *testing.T) {
 
 			// Validate that the mock routes were called as expected.
 			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
+				mr.Validate(c)
 			}
 		})
 	}
@@ -1916,7 +1920,6 @@ func TestValidateTupleForFindUsersByRelation(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
 			// Execute the test.
 			err := ofga.ValidateTupleForFindUsersByRelation(test.tuple)
@@ -1932,8 +1935,6 @@ func TestValidateTupleForFindUsersByRelation(t *testing.T) {
 
 func TestClientFindUsersByRelation(t *testing.T) {
 	c := qt.New(t)
-
-	ctx := context.Background()
 	client := getTestClient(c)
 
 	tests := []struct {
@@ -1964,14 +1965,16 @@ func TestClientFindUsersByRelation(t *testing.T) {
 		},
 		expectedErr: "invalid tuple for FindUsersByRelation.*tuple.Target.Relation must not be set",
 	}, {
-		about: "found users are returned successfully",
+		about: "found users are returned successfully when a tuple not specifying an object is provided",
 		tuple: ofga.Tuple{
 			Relation: "member",
 			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
 		},
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              ListUsersRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
+			Route: ListUsersRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
 			ExpectedReqBody: openfga.ListUsersRequest{
 				Object: openfga.FgaObject{
 					Type: "organization",
@@ -1982,29 +1985,59 @@ func TestClientFindUsersByRelation(t *testing.T) {
 			},
 			MockResponse: openfga.ListUsersResponse{
 				Users: []openfga.User{
-					{Object: &openfga.FgaObject{Type: "user", Id: "XYZ"}},
+					{
+						Object:   &openfga.FgaObject{Type: "user", Id: "XYZ"},
+						Wildcard: openfga.NewTypedWildcard("user"),
+					},
 					{Object: &openfga.FgaObject{Type: "user", Id: "ABC"}},
 				},
 			},
 		}},
 		expectedUsers: []ofga.Entity{
-			{Kind: "user", ID: "XYZ"},
+			{Kind: "user", ID: "*"},
 			{Kind: "user", ID: "ABC"},
+		},
+	}, {
+		about: "found users are returned successfully when a tuple specifying an object is provided",
+		tuple: ofga.Tuple{
+			Relation: "member",
+			Object:   &ofga.Entity{Kind: "editor"},
+			Target:   &ofga.Entity{Kind: "organization", ID: "123"},
+		},
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route: ListUsersRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
+			ExpectedReqBody: openfga.ListUsersRequest{
+				Object: openfga.FgaObject{
+					Type: "organization",
+					Id:   "123",
+				},
+				Relation:    "member",
+				UserFilters: []openfga.UserTypeFilter{{Type: "editor"}},
+			},
+			MockResponse: openfga.ListUsersResponse{
+				Users: []openfga.User{
+					{Object: &openfga.FgaObject{Type: "editor", Id: "ABC"}},
+				},
+			},
+		}},
+		expectedUsers: []ofga.Entity{
+			{Kind: "editor", ID: "ABC"},
 		},
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
+			// Set up and configure the http mocks.
+			mux := http.NewServeMux()
+			ts := mockhttp.CreateMockServerWithResponders(mux, c, ofgaServerIP, ofgaServerPort, test.mockRoutes)
+			ts.Start()
+			defer ts.Close()
 
 			// Execute the test.
-			users, err := client.FindUsersByRelation(ctx, test.tuple)
+			users, err := client.FindUsersByRelation(c.Context(), test.tuple)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
@@ -2016,7 +2049,7 @@ func TestClientFindUsersByRelation(t *testing.T) {
 
 			// Validate that the mock routes were called as expected.
 			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
+				mr.Validate(c)
 			}
 		})
 	}
@@ -2081,7 +2114,6 @@ func TestValidateTupleForFindAccessibleObjectsByRelation(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
 			// Execute the test.
 			err := ofga.ValidateTupleForFindAccessibleObjectsByRelation(test.tuple)
@@ -2097,8 +2129,6 @@ func TestValidateTupleForFindAccessibleObjectsByRelation(t *testing.T) {
 
 func TestClientFindAccessibleObjectsByRelation(t *testing.T) {
 	c := qt.New(t)
-
-	ctx := context.Background()
 	client := getTestClient(c)
 
 	tests := []struct {
@@ -2166,8 +2196,10 @@ func TestClientFindAccessibleObjectsByRelation(t *testing.T) {
 			Target:   &ofga.Entity{Kind: "organization", ID: "456"},
 		}},
 		mockRoutes: []*mockhttp.RouteResponder{{
-			Route:              ListObjectsRoute,
-			ExpectedPathParams: []string{validFGAParams.StoreID},
+			Route: ListObjectsRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
 			ExpectedReqBody: openfga.ListObjectsRequest{
 				AuthorizationModelId: openfga.PtrString(validFGAParams.AuthModelID),
 				Type:                 "organization",
@@ -2191,17 +2223,15 @@ func TestClientFindAccessibleObjectsByRelation(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
-			// Set up and configure mock http responders.
-			httpmock.Activate()
-			defer httpmock.DeactivateAndReset()
-			for _, mr := range test.mockRoutes {
-				httpmock.RegisterResponder(mr.Route.Method, mr.Route.Endpoint, mr.Generate())
-			}
+			// Set up and configure the http mocks.
+			mux := http.NewServeMux()
+			ts := mockhttp.CreateMockServerWithResponders(mux, c, ofgaServerIP, ofgaServerPort, test.mockRoutes)
+			ts.Start()
+			defer ts.Close()
 
 			// Execute the test.
-			objects, err := client.FindAccessibleObjectsByRelation(ctx, test.tuple, test.contextualTuples...)
+			objects, err := client.FindAccessibleObjectsByRelation(c.Context(), test.tuple, test.contextualTuples...)
 
 			if test.expectedErr != "" {
 				c.Assert(err, qt.ErrorMatches, test.expectedErr)
@@ -2213,7 +2243,7 @@ func TestClientFindAccessibleObjectsByRelation(t *testing.T) {
 
 			// Validate that the mock routes were called as expected.
 			for _, mr := range test.mockRoutes {
-				mr.Finish(c)
+				mr.Validate(c)
 			}
 		})
 	}
