@@ -56,20 +56,13 @@ type RouteResponder struct {
 	MockResponseStatus int
 }
 
-// isValidHTTPStatusCode checks whether the input code refers to a valid HTTP
-// Status code.
-func isValidHTTPStatusCode(code int) bool {
-	return http.StatusText(code) != ""
-}
-
 // CreateMockServerWithResponders creates a mock HTTP server using the provided
 // http.ServeMux. The server listens on the provided IP address and port, on the
 // routes already present on the provided http.ServeMux and those provided as
 // RouteResponder to this function.
 func CreateMockServerWithResponders(mux *http.ServeMux, c *qt.C, ip string, port int, responders []*RouteResponder) *httptest.Server {
 	for _, r := range responders {
-		err := r.Register(mux)
-		c.Assert(err, qt.IsNil)
+		r.Register(mux)
 	}
 
 	ts := httptest.NewUnstartedServer(mux)
@@ -85,17 +78,16 @@ func CreateMockServerWithResponders(mux *http.ServeMux, c *qt.C, ip string, port
 }
 
 // Register registers the Route with the provided http.ServeMux.
-func (r *RouteResponder) Register(mux *http.ServeMux) error {
-	var err error
+func (r *RouteResponder) Register(mux *http.ServeMux) {
 	mux.HandleFunc(r.Route.Endpoint, func(w http.ResponseWriter, req *http.Request) {
 		// Store the incoming request so that it can be validated later.
 		// Note that the request body needs to be copied separately, as it can
 		// only be read once.
 		// See: https://pkg.go.dev/net/http#Request
 		r.req = req.Clone(req.Context())
-		body, bodyErr := io.ReadAll(req.Body)
-		if bodyErr != nil {
-			err = bodyErr
+		body, err := io.ReadAll(req.Body)
+		if err != nil {
+			http.Error(w, "failed to read body", http.StatusInternalServerError)
 			return
 		}
 		// Clone the request body, re-assigning it both to the stored request
@@ -106,8 +98,8 @@ func (r *RouteResponder) Register(mux *http.ServeMux) error {
 		req.Body = io.NopCloser(bytes.NewReader(body))
 
 		if r.MockResponseStatus != 0 {
-			if !isValidHTTPStatusCode(r.MockResponseStatus) {
-				err = fmt.Errorf("invalid HTTP status code: %d", r.MockResponseStatus)
+			if http.StatusText(r.MockResponseStatus) == "" {
+				http.Error(w, fmt.Sprintf("invalid HTTP status code: %d", r.MockResponseStatus), http.StatusInternalServerError)
 				return
 			}
 			w.WriteHeader(r.MockResponseStatus)
@@ -116,10 +108,12 @@ func (r *RouteResponder) Register(mux *http.ServeMux) error {
 		if req.Method == r.Route.Method && r.MockResponse != nil {
 			w.Header().Set("Content-Type", "application/json")
 			err = json.NewEncoder(w).Encode(r.MockResponse)
+			if err != nil {
+				http.Error(w, "failed to encode mock response", http.StatusInternalServerError)
+				return
+			}
 		}
 	})
-
-	return err
 }
 
 // Validate runs validations for the route, ensuring that the received request
