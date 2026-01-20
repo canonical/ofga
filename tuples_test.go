@@ -162,7 +162,6 @@ func TestToOpenFGATuple(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
 			c.Parallel()
 
@@ -208,7 +207,6 @@ func TestTuplesToOpenFGATupleKeys(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
 			c.Parallel()
 
@@ -243,7 +241,6 @@ func TestEntityString(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
 			c.Parallel()
 
@@ -277,7 +274,6 @@ func TestEntityIsPublicAccess(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
 			c.Parallel()
 
@@ -358,7 +354,6 @@ func TestParseEntity(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
 			c.Parallel()
 
@@ -413,7 +408,6 @@ func TestFromOpenFGATupleKey(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
 			c.Parallel()
 
@@ -471,7 +465,6 @@ func TestTuple_IsEmpty(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		test := test
 		c.Run(test.about, func(c *qt.C) {
 			c.Parallel()
 

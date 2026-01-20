@@ -12,7 +12,7 @@ _Check only items that apply_
 - [ ] Covered by integration tests
 - [ ] Independent change*
 
- _* This is an independent change if it can be merged and released indepently without any related service deployments._
+ _* This is an independent change if it can be merged and released independently without any related service deployments._
 
 ## Merging instructions
 
@@ -28,4 +28,3 @@ _(optional)_ Describe any non-standard test instructions and configuration setti
 ## Notes for code reviewers
 
 _(optional)_ Mention any relevant information for code reviewers. Delete this section if not applicable.
-

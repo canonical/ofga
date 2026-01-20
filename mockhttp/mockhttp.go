@@ -7,13 +7,16 @@
 package mockhttp
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/jarcoal/httpmock"
 )
 
 // Route represents a callable API endpoint.
@@ -44,9 +47,8 @@ type RouteResponder struct {
 	// params for requests that call this Route.
 	ExpectedReqQueryParams url.Values
 	// ExpectedPathParams allows to specify the expected path parameters for
-	// requests that call this Route. They should be specified in the order
-	// that they are expected to be found in the path.
-	ExpectedPathParams []string
+	// requests that call this Route, in the format name=value.
+	ExpectedPathParams map[string]string
 	// MockResponse allows to configure a mock response body to be returned.
 	MockResponse any
 	// MockResponseStatus allows to configure the response status to be used.
@@ -54,38 +56,75 @@ type RouteResponder struct {
 	MockResponseStatus int
 }
 
-// isValidHTTPStatusCode checks whether the input code refers to a valid HTTP
-// Status code.
-func isValidHTTPStatusCode(code int) bool {
-	return http.StatusText(code) != ""
-}
-
-// Generate returns a httpmock.Responder function for the Route. This returned
-// function is used by httpmock to Generate a response whenever a http request
-// is made to the configured Route.
-func (r *RouteResponder) Generate() httpmock.Responder {
-	return func(req *http.Request) (*http.Response, error) {
-		// Store the incoming request so that it can be validated later.
-		r.req = req
-
-		status := http.StatusOK
-		if r.MockResponseStatus != 0 {
-			if !isValidHTTPStatusCode(r.MockResponseStatus) {
-				panic(fmt.Sprintf("Invalid HTTP status code: %d", r.MockResponseStatus))
-			}
-			status = r.MockResponseStatus
-		}
-		resp, err := httpmock.NewJsonResponse(status, r.MockResponse)
-		if err != nil {
-			return httpmock.NewStringResponse(http.StatusInternalServerError, "failed to convert mockResponse to json"), nil
-		}
-		return resp, nil
+// CreateMockServerWithResponders creates a mock HTTP server using the provided
+// http.ServeMux. The server listens on the provided IP address and port, on the
+// routes already present on the provided http.ServeMux and those provided as
+// RouteResponder to this function.
+func CreateMockServerWithResponders(mux *http.ServeMux, c *qt.C, ip string, port int, responders []*RouteResponder) *httptest.Server {
+	for _, r := range responders {
+		r.Register(mux)
 	}
+
+	ts := httptest.NewUnstartedServer(mux)
+
+	// Replace the test server's IP and port with the expected ones.
+	tl, err := net.Listen("tcp", fmt.Sprintf("%s:%d", ip, port))
+	c.Assert(err, qt.IsNil)
+	err = ts.Listener.Close()
+	c.Assert(err, qt.IsNil)
+	ts.Listener = tl
+
+	return ts
 }
 
-// Finish runs validations for the route, ensuring that the received request
+// Register registers the Route with the provided http.ServeMux.
+func (r *RouteResponder) Register(mux *http.ServeMux) {
+	mux.HandleFunc(r.Route.Endpoint, func(w http.ResponseWriter, req *http.Request) {
+		// Store the incoming request so that it can be validated later.
+		// Note that the request body needs to be copied separately, as it can
+		// only be read once.
+		// See: https://pkg.go.dev/net/http#Request
+		r.req = req.Clone(req.Context())
+		body, err := io.ReadAll(req.Body)
+		if err != nil {
+			http.Error(w, "failed to read body", http.StatusInternalServerError)
+			return
+		}
+		// Clone the request body, re-assigning it both to the stored request
+		// and to the original request.
+		// This allows later validations on r.req, while also ensuring that
+		// further processing of req can still read the body.
+		r.req.Body = io.NopCloser(bytes.NewReader(body))
+		req.Body = io.NopCloser(bytes.NewReader(body))
+
+		// If not specified, assume that the response status is http.StatusOK.
+		if r.MockResponseStatus != 0 {
+			if http.StatusText(r.MockResponseStatus) == "" {
+				http.Error(w, fmt.Sprintf("invalid HTTP status code: %d", r.MockResponseStatus), http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(r.MockResponseStatus)
+		}
+
+		if req.Method != r.Route.Method {
+			http.Error(w, fmt.Sprintf("invalid HTTP method: got %s, want %s", req.Method, r.Route.Method), http.StatusMethodNotAllowed)
+			return
+		}
+
+		if r.MockResponse != nil {
+			w.Header().Set("Content-Type", "application/json")
+			err = json.NewEncoder(w).Encode(r.MockResponse)
+			if err != nil {
+				http.Error(w, "failed to encode mock response", http.StatusInternalServerError)
+				return
+			}
+		}
+	})
+}
+
+// Validate runs validations for the route, ensuring that the received request
 // matches the predefined expectations.
-func (r *RouteResponder) Finish(c *qt.C) {
+func (r *RouteResponder) Validate(c *qt.C) {
 	if r.ExpectedReqBody != nil {
 		body := make(map[string]any)
 		err := json.NewDecoder(r.req.Body).Decode(&body)
@@ -103,9 +142,9 @@ func (r *RouteResponder) Finish(c *qt.C) {
 		c.Assert(r.req.URL.Query(), qt.ContentEquals, r.ExpectedReqQueryParams)
 	}
 	if r.ExpectedPathParams != nil {
-		for i, expected := range r.ExpectedPathParams {
-			got := httpmock.MustGetSubmatch(r.req, i+1)
-			c.Assert(got, qt.Equals, expected, qt.Commentf("path parameter mismatch"))
+		for pathParam, value := range r.ExpectedPathParams {
+			got := r.req.PathValue(pathParam)
+			c.Assert(got, qt.Equals, value, qt.Commentf("path parameter %s value mismatch", pathParam))
 		}
 	}
 }

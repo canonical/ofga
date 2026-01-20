@@ -9,20 +9,23 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 
-	"github.com/juju/zaputil/zapctx"
 	openfga "github.com/openfga/go-sdk"
 	"github.com/openfga/go-sdk/credentials"
 	"github.com/openfga/go-sdk/telemetry"
-	"go.uber.org/zap"
 )
 
-const ignoreMissingOnDelete = "ignore"
-const ignoreDuplicateOnWrite = "ignore"
+const (
+	ignoreMissingOnDelete  = "ignore"
+	ignoreDuplicateOnWrite = "ignore"
+)
 
-type writeOption func(wr *openfga.WriteRequestWrites) error
-type deleteOption func(dr *openfga.WriteRequestDeletes) error
+type (
+	writeOption  func(wr *openfga.WriteRequestWrites) error
+	deleteOption func(dr *openfga.WriteRequestDeletes) error
+)
 
 // OpenFGAParams holds parameters needed to connect to the OpenFGA server.
 type OpenFGAParams struct {
@@ -79,7 +82,7 @@ type Client struct {
 }
 
 // NewClient returns a wrapped OpenFGA API client ensuring all calls are made
-// to the provided authorisation model (id) and returns what is necessary.
+// to the provided authorization model (id) and returns what is necessary.
 func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 	if p.Host == "" {
 		return nil, errors.New("invalid OpenFGA configuration: missing host")
@@ -90,11 +93,11 @@ func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 	if p.StoreID == "" && p.AuthModelID != "" {
 		return nil, errors.New("invalid OpenFGA configuration: AuthModelID specified without a StoreID")
 	}
-	zapctx.Info(ctx, "configuring OpenFGA client",
-		zap.String("scheme", p.Scheme),
-		zap.String("host", p.Host),
-		zap.String("port", p.Port),
-		zap.String("store", p.StoreID),
+	slog.InfoContext(ctx, "configuring OpenFGA client",
+		slog.String("scheme", p.Scheme),
+		slog.String("host", p.Host),
+		slog.String("port", p.Port),
+		slog.String("store", p.StoreID),
 	)
 
 	config := openfga.Configuration{
@@ -137,7 +140,7 @@ func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 
 	_, _, err = api.ListStores(ctx).Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot list stores: %v", err))
+		slog.ErrorContext(ctx, fmt.Sprintf("cannot list stores: %v", err))
 		return nil, fmt.Errorf("cannot list stores: %v", err)
 	}
 
@@ -145,20 +148,20 @@ func NewClient(ctx context.Context, p OpenFGAParams) (*Client, error) {
 	if p.StoreID != "" {
 		storeResp, _, err := api.GetStore(ctx, p.StoreID).Execute()
 		if err != nil {
-			zapctx.Error(ctx, fmt.Sprintf("cannot retrieve store: %v", err))
+			slog.ErrorContext(ctx, fmt.Sprintf("cannot retrieve store: %v", err))
 			return nil, fmt.Errorf("cannot retrieve store: %v", err)
 		}
-		zapctx.Info(ctx, "store found", zap.String("storeName", storeResp.GetName()))
+		slog.InfoContext(ctx, "store found", slog.String("storeName", storeResp.GetName()))
 	}
 
 	// If AuthModelID is present, validate that such an AuthModel exists.
 	if p.AuthModelID != "" {
 		authModelResp, _, err := api.ReadAuthorizationModel(ctx, p.StoreID, p.AuthModelID).Execute()
 		if err != nil {
-			zapctx.Error(ctx, fmt.Sprintf("cannot retrieve authModel: %v", err))
+			slog.ErrorContext(ctx, fmt.Sprintf("cannot retrieve authModel: %v", err))
 			return nil, fmt.Errorf("cannot retrieve authModel: %v", err)
 		}
-		zapctx.Info(ctx, "auth model found", zap.String("authModelID", authModelResp.AuthorizationModel.GetId()))
+		slog.InfoContext(ctx, "auth model found", slog.String("authModelID", authModelResp.AuthorizationModel.GetId()))
 	}
 	return &Client{
 		api:         api,
@@ -228,14 +231,14 @@ func (c *Client) CheckRelationWithTracing(ctx context.Context, tuple Tuple, cont
 
 // checkRelation internal implementation for check relation procedure.
 func (c *Client) checkRelation(ctx context.Context, tuple Tuple, trace bool, contextualTuples ...Tuple) (bool, error) {
-	zapctx.Debug(
+	slog.DebugContext(
 		ctx,
 		"check request internal",
-		zap.String("tuple object", tuple.Object.String()),
-		zap.String("tuple relation", tuple.Relation.String()),
-		zap.String("tuple target object", tuple.Target.String()),
-		zap.Bool("trace", trace),
-		zap.Int("contextual tuples", len(contextualTuples)),
+		slog.String("tuple object", tuple.Object.String()),
+		slog.String("tuple relation", tuple.Relation.String()),
+		slog.String("tuple target object", tuple.Target.String()),
+		slog.Bool("trace", trace),
+		slog.Int("contextual tuples", len(contextualTuples)),
 	)
 	cr := openfga.NewCheckRequest(*tuple.ToOpenFGACheckRequestTupleKey())
 	cr.SetAuthorizationModelId(c.authModelID)
@@ -249,11 +252,14 @@ func (c *Client) checkRelation(ctx context.Context, tuple Tuple, trace bool, con
 
 	checkResp, httpResp, err := c.api.Check(ctx, c.storeID).Body(*cr).Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute Check request: %v", err))
+		slog.ErrorContext(ctx, fmt.Sprintf("cannot execute Check request: %v", err))
 		return false, fmt.Errorf("cannot check relation: %v", err)
 	}
 	allowed := checkResp.GetAllowed()
-	zapctx.Debug(ctx, "check request internal resp code", zap.Int("code", httpResp.StatusCode), zap.Bool("allowed", allowed))
+	slog.DebugContext(ctx, "check request internal resp code",
+		slog.Int("code", httpResp.StatusCode),
+		slog.Bool("allowed", allowed),
+	)
 	return allowed, nil
 }
 
@@ -324,7 +330,7 @@ func (c *Client) addRemoveRelations(ctx context.Context, addTuples, removeTuples
 	}
 	_, _, err := c.api.Write(ctx, c.storeID).Body(*wr).Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute Write request: %v", err))
+		slog.ErrorContext(ctx, fmt.Sprintf("cannot execute Write request: %v", err))
 		return fmt.Errorf("cannot add or remove relations: %v", err)
 	}
 	return nil
@@ -335,7 +341,7 @@ func (c *Client) CreateStore(ctx context.Context, name string) (string, error) {
 	csr := openfga.NewCreateStoreRequest(name)
 	resp, _, err := c.api.CreateStore(ctx).Body(*csr).Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute CreateStore request: %v", err))
+		slog.ErrorContext(ctx, fmt.Sprintf("cannot execute CreateStore request: %v", err))
 		return "", fmt.Errorf("cannot create store: %v", err)
 	}
 	return resp.GetId(), nil
@@ -357,7 +363,7 @@ func (c *Client) ListStores(ctx context.Context, pageSize int32, continuationTok
 
 	resp, _, err := lsr.Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute ListStores request: %v", err))
+		slog.ErrorContext(ctx, fmt.Sprintf("cannot execute ListStores request: %v", err))
 		return openfga.ListStoresResponse{}, fmt.Errorf("cannot list stores: %v", err)
 	}
 	return resp, nil
@@ -383,7 +389,7 @@ func (c *Client) ReadChanges(ctx context.Context, entityType string, pageSize in
 
 	resp, _, err := rcr.Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute ReadChanges request: %v", err))
+		slog.ErrorContext(ctx, fmt.Sprintf("cannot execute ReadChanges request: %v", err))
 		return openfga.ReadChangesResponse{}, fmt.Errorf("cannot read changes: %v", err)
 	}
 	return resp, nil
@@ -413,7 +419,7 @@ func (c *Client) CreateAuthModel(ctx context.Context, authModel *openfga.Authori
 	ar.SetSchemaVersion(authModel.SchemaVersion)
 	resp, _, err := c.api.WriteAuthorizationModel(ctx, c.storeID).Body(*ar).Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute WriteAuthorizationModel request: %v", err))
+		slog.ErrorContext(ctx, fmt.Sprintf("cannot execute WriteAuthorizationModel request: %v", err))
 		return "", fmt.Errorf("cannot create auth model: %v", err)
 	}
 	return resp.GetAuthorizationModelId(), nil
@@ -433,7 +439,7 @@ func (c *Client) ListAuthModels(ctx context.Context, pageSize int32, continuatio
 	}
 	resp, _, err := rar.Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute ReadAuthorizationModels request: %v", err))
+		slog.ErrorContext(ctx, fmt.Sprintf("cannot execute ReadAuthorizationModels request: %v", err))
 		return openfga.ReadAuthorizationModelsResponse{}, fmt.Errorf("cannot list authorization models: %v", err)
 	}
 	return resp, nil
@@ -443,7 +449,7 @@ func (c *Client) ListAuthModels(ctx context.Context, pageSize int32, continuatio
 func (c *Client) GetAuthModel(ctx context.Context, ID string) (openfga.AuthorizationModel, error) {
 	resp, _, err := c.api.ReadAuthorizationModel(ctx, c.storeID, ID).Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute ReadAuthorizationModel request: %v", err))
+		slog.ErrorContext(ctx, fmt.Sprintf("cannot execute ReadAuthorizationModel request: %v", err))
 		return openfga.AuthorizationModel{}, fmt.Errorf("cannot list authorization models: %v", err)
 	}
 	return resp.GetAuthorizationModel(), nil
@@ -505,14 +511,14 @@ func (c *Client) FindMatchingTuples(ctx context.Context, tuple Tuple, pageSize i
 	}
 	resp, _, err := c.api.Read(ctx, c.storeID).Body(*rr).Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute Read request: %v", err))
+		slog.ErrorContext(ctx, fmt.Sprintf("cannot execute Read request: %v", err))
 		return nil, "", fmt.Errorf("cannot fetch matching tuples: %v", err)
 	}
 	tuples := make([]TimestampedTuple, 0, len(resp.GetTuples()))
 	for _, oTuple := range resp.GetTuples() {
 		t, err := FromOpenFGATupleKey(oTuple.Key)
 		if err != nil {
-			zapctx.Error(ctx, fmt.Sprintf("cannot parse tuple from Read response: %v", err))
+			slog.ErrorContext(ctx, fmt.Sprintf("cannot parse tuple from Read response: %v", err))
 			return nil, "", fmt.Errorf("cannot parse tuple %+v, %v", oTuple, err)
 		}
 		tuples = append(tuples, TimestampedTuple{
@@ -558,7 +564,7 @@ func (c *Client) FindUsersByRelation(ctx context.Context, tuple Tuple) ([]Entity
 	body := openfga.ListUsersRequest{
 		Object: openfga.FgaObject{
 			Type: string(tuple.Target.Kind),
-			Id:   string(tuple.Target.ID),
+			Id:   tuple.Target.ID,
 		},
 		Relation:    tuple.Relation.String(),
 		UserFilters: userFilters,
@@ -568,7 +574,7 @@ func (c *Client) FindUsersByRelation(ctx context.Context, tuple Tuple) ([]Entity
 		Body(body).
 		Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute ListUsers request: %v", err))
+		slog.ErrorContext(ctx, fmt.Sprintf("cannot execute ListUsers request: %v", err))
 		return nil, fmt.Errorf("cannot execute ListUsers request: %v", err)
 	}
 	entities := make([]Entity, 0, len(resp.Users))
@@ -653,7 +659,7 @@ func (c *Client) FindAccessibleObjectsByRelation(ctx context.Context, tuple Tupl
 
 	resp, _, err := c.api.ListObjects(ctx, c.storeID).Body(*lor).Execute()
 	if err != nil {
-		zapctx.Error(ctx, fmt.Sprintf("cannot execute ListObjects request: %v", err))
+		slog.ErrorContext(ctx, fmt.Sprintf("cannot execute ListObjects request: %v", err))
 		return nil, fmt.Errorf("cannot list objects: %v", err)
 	}
 
