@@ -50,7 +50,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v6
       - name: Set up Docker Compose
-        uses: docker/setup-compose-action@v1
+        uses: docker/setup-compose-action@v2
       - name: Set up Go ${{ matrix.go-version }}
         uses: actions/setup-go@v6
         with:
