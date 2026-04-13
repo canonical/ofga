@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: [ '1.24' ]
+        go-version: [ '1.25' ]
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: [ '1.24' ]
+        go-version: [ '1.25' ]
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: [ '1.24' ]
+        go-version: [ '1.25' ]
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
