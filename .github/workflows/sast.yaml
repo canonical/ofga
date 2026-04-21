@@ -1,0 +1,36 @@
+name: SAST
+# Run static application security testing (SAST)
+
+# If this job fails in CI, you can run the hooks locally, e.g.:
+# pre-commit install
+# pre-commit run --all-files
+# git add .
+# git commit -m "Fix pre-commit issues"
+# git push
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 4 * * 1'  # every Monday at 04:00 UTC, to keep SHA pins current
+  workflow_dispatch:  # allow manual runs to refresh/verify SHA pins
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd  # v3.0.1
+      - uses: pre-commit-ci/lite-action@5d6cc0eb514c891a40562a58a8e71576c5c7fb43  # v1.1.0
+        if: always() && github.event_name == 'pull_request'
+        with:
+          msg: "pre-commit: apply automatic fixes"

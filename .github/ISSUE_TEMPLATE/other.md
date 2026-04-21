@@ -1,5 +1,5 @@
 ---
-name: Other 
+name: Other
 about: Create an issue that does not fall into the defined categories
 title: ''
 labels: ''
