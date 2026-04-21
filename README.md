@@ -22,7 +22,7 @@ representing relationship tuples within the OpenFGA system. This structured
 approach simplifies the management of relationship tuples and their associated
 system entities within your application.
 - **Enhanced response format**: The library transforms certain responses
-returned by the underlying client, allowing for easier data access and 
+returned by the underlying client, allowing for easier data access and
 manipulation. One example is the Expand API, where the underlying client returns
 a tree-like response, while the library recursively expands this tree (upto the
 specified depth) to provide the actual set of users/usersets that possess the
@@ -39,11 +39,11 @@ relevant permissions.
     ```go
         import "github.com/canonical/ofga"
     ```
-   
+
 3. Create a new ofga client and handle any errors:
     ```go
     ctx = context.Background()
-    
+
    // Create a new ofga client
     client, err := ofga.NewClient(ctx, ofga.OpenFGAParams{
         Scheme:      os.Getenv("OPENFGA_API_SCHEME"),    // defaults to `https` if not specified.

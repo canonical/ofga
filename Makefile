@@ -51,7 +51,7 @@ test-coverage:
 	go tool cover -html=/tmp/cover.out -o /tmp/cover.html && \
 	xdg-open /tmp/cover.html
 
-# This build target may not necessarily be used much depending on our deployment strategy, but is kept here nonetheless as a reference for how to 
+# This build target may not necessarily be used much depending on our deployment strategy, but is kept here nonetheless as a reference for how to
 # build while inserting the git commit into the version info
 .PHONY: build
 build: ## Set version info based on current commit and then build

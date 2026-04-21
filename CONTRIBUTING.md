@@ -15,7 +15,7 @@ make test
 Integration tests run against a real OpenFGA instance with PostgreSQL.
 
 ```bash
-docker compose up -d 
+docker compose up -d
 make test-integration
 ```
 

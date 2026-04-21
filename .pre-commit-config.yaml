@@ -1,0 +1,18 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-added-large-files
+
+  # zizmor is a static analysis tool for GitHub Actions.
+  # It notably won't allow referencing GitHub Actions by tag or branch. Actions
+  # need to be referenced by commit hash for added security.
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: ea2eb407b4cbce87cf0d502f36578950494f5ac9  # frozen: v1.23.1
+    hooks:
+      - id: zizmor
+        args:
+          - --fix
+          - --no-online-audits
