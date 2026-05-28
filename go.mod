@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/frankban/quicktest v1.14.6
-	github.com/openfga/go-sdk v0.8.0
+	github.com/openfga/go-sdk v0.8.1
 )
 
 require (
