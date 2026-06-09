@@ -190,6 +190,31 @@ func ExampleClient_CheckRelation_contextualTuples() {
 	fmt.Printf("allowed: %v", allowed)
 }
 
+func ExampleClient_CheckRelationWithContext() {
+	contextualTuple := ofga.Tuple{
+		Object:    &ofga.Entity{Kind: "user", ID: "123"},
+		Relation:  "viewer",
+		Target:    &ofga.Entity{Kind: "report", ID: "quarterly"},
+		Condition: ofga.NewRelationshipCondition("can_grant"),
+	}
+
+	allowed, err := client.CheckRelationWithContext(
+		context.Background(),
+		ofga.Tuple{
+			Object:   &ofga.Entity{Kind: "user", ID: "123"},
+			Relation: "viewer",
+			Target:   &ofga.Entity{Kind: "report", ID: "quarterly"},
+		},
+		map[string]any{"grantable": true},
+		contextualTuple,
+	)
+	if err != nil {
+		// Handle err
+		return
+	}
+	fmt.Printf("allowed: %v", allowed)
+}
+
 func ExampleClient_CheckRelationWithTracing() {
 	// Check if the relation exists
 	allowed, err := client.CheckRelationWithTracing(context.Background(), ofga.Tuple{

@@ -1480,6 +1480,17 @@ func TestAuthModelFromJson(t *testing.T) {
 func TestClientCreateAuthModel(t *testing.T) {
 	c := qt.New(t)
 	client := getTestClient(c)
+	conditions := map[string]openfga.Condition{
+		"can_grant": {
+			Name:       "can_grant",
+			Expression: "grantable == true",
+			Parameters: &map[string]openfga.ConditionParamTypeRef{
+				"grantable": {TypeName: openfga.TYPENAME_BOOL},
+			},
+		},
+	}
+	authModelWithConditions := authModel
+	authModelWithConditions.Conditions = &conditions
 
 	tests := []struct {
 		about               string
@@ -1506,6 +1517,22 @@ func TestClientCreateAuthModel(t *testing.T) {
 			ExpectedReqBody: &openfga.WriteAuthorizationModelRequest{
 				TypeDefinitions: authModel.TypeDefinitions,
 				SchemaVersion:   authModel.SchemaVersion,
+			},
+			MockResponse: openfga.WriteAuthorizationModelResponse{AuthorizationModelId: "XYZ"},
+		}},
+		expectedAuthModelID: "XYZ",
+	}, {
+		about:     "auth model with conditions is created successfully",
+		authModel: &authModelWithConditions,
+		mockRoutes: []*mockhttp.RouteResponder{{
+			Route: WriteAuthModelRoute,
+			ExpectedPathParams: map[string]string{
+				storeIDPathParam: validFGAParams.StoreID,
+			},
+			ExpectedReqBody: &openfga.WriteAuthorizationModelRequest{
+				TypeDefinitions: authModelWithConditions.TypeDefinitions,
+				SchemaVersion:   authModelWithConditions.SchemaVersion,
+				Conditions:      authModelWithConditions.Conditions,
 			},
 			MockResponse: openfga.WriteAuthorizationModelResponse{AuthorizationModelId: "XYZ"},
 		}},

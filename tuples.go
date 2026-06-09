@@ -31,6 +31,14 @@ func (r Relation) String() string {
 	return string(r)
 }
 
+// RelationshipCondition describes the condition attached to a relationship tuple.
+type RelationshipCondition = openfga.RelationshipCondition
+
+// NewRelationshipCondition creates a relationship condition by name.
+func NewRelationshipCondition(name string) *RelationshipCondition {
+	return openfga.NewRelationshipCondition(name)
+}
+
 // Entity represents an entity/entity-set in OpenFGA.
 // Example: `user:<user-id>`, `org:<org-id>#member`, `document:` (only kind
 // sometimes used in the Read API)
@@ -81,9 +89,10 @@ func ParseEntity(s string) (Entity, error) {
 // need to create object to object relationships. Hence, we chose to use
 // (Object, Relation, Target), as it results in more consistent naming.
 type Tuple struct {
-	Object   *Entity
-	Relation Relation
-	Target   *Entity
+	Object    *Entity
+	Relation  Relation
+	Target    *Entity
+	Condition *RelationshipCondition
 }
 
 // ToOpenFGATupleKey converts our Tuple struct into an OpenFGA TupleKey.
@@ -98,6 +107,9 @@ func (t Tuple) ToOpenFGATupleKey() *openfga.TupleKey {
 		k.SetRelation(t.Relation.String())
 	}
 	k.SetObject(t.Target.String())
+	if t.Condition != nil {
+		k.SetCondition(*t.Condition)
+	}
 	return k
 }
 

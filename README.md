@@ -85,6 +85,34 @@ For example:
     ... // Perform action
     ```
 
+6. Use request-level condition context with conditioned contextual tuples:
+    ```go
+    contextualTuple := ofga.Tuple{
+        Object:    &ofga.Entity{Kind: "user", ID: "123"},
+        Relation:  "viewer",
+        Target:    &ofga.Entity{Kind: "report", ID: "quarterly"},
+        Condition: ofga.NewRelationshipCondition("can_grant"),
+    }
+
+    allowed, err = client.CheckRelationWithContext(
+        ctx,
+        ofga.Tuple{
+            Object:   &ofga.Entity{Kind: "user", ID: "123"},
+            Relation: "viewer",
+            Target:   &ofga.Entity{Kind: "report", ID: "quarterly"},
+        },
+        map[string]any{"grantable": true},
+        contextualTuple,
+    )
+    if err != nil {
+        // Handle error
+    }
+    if !allowed {
+        // Permission denied
+    }
+    ... // Perform action
+    ```
+
 ## Documentation
 
 The documentation for this package can be found on
