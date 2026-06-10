@@ -216,6 +216,25 @@ func (c *Client) CheckRelation(ctx context.Context, tuple Tuple, contextualTuple
 	return c.checkRelation(ctx, tuple, false, contextualTuples...)
 }
 
+// CheckRelationWithContext behaves like CheckRelation but additionally sets a
+// request-level condition context and supports conditioned contextual tuples.
+func (c *Client) CheckRelationWithContext(ctx context.Context, tuple Tuple, conditionContext map[string]any, contextualTuples ...Tuple) (bool, error) {
+	cr := openfga.NewCheckRequest(*tuple.ToOpenFGACheckRequestTupleKey())
+	cr.SetAuthorizationModelId(c.authModelID)
+	if len(contextualTuples) > 0 {
+		keys := tuplesToOpenFGATupleKeys(contextualTuples)
+		cr.SetContextualTuples(*openfga.NewContextualTupleKeys(keys))
+	}
+	if conditionContext != nil {
+		cr.SetContext(conditionContext)
+	}
+	checkResp, _, err := c.api.Check(ctx, c.storeID).Body(*cr).Execute()
+	if err != nil {
+		return false, fmt.Errorf("cannot check relation: %v", err)
+	}
+	return checkResp.GetAllowed(), nil
+}
+
 // CheckRelationWithTracing verifies that the specified relation exists (either
 // directly or indirectly) between the object and the target as specified by
 // the tuple. This method enables the tracing option.
@@ -417,6 +436,9 @@ func AuthModelFromJSON(data []byte) (*openfga.AuthorizationModel, error) {
 func (c *Client) CreateAuthModel(ctx context.Context, authModel *openfga.AuthorizationModel) (string, error) {
 	ar := openfga.NewWriteAuthorizationModelRequest(authModel.TypeDefinitions, authModel.SchemaVersion)
 	ar.SetSchemaVersion(authModel.SchemaVersion)
+	if authModel.Conditions != nil {
+		ar.SetConditions(*authModel.Conditions)
+	}
 	resp, _, err := c.api.WriteAuthorizationModel(ctx, c.storeID).Body(*ar).Execute()
 	if err != nil {
 		slog.ErrorContext(ctx, fmt.Sprintf("cannot execute WriteAuthorizationModel request: %v", err))

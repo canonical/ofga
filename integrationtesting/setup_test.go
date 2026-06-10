@@ -55,6 +55,7 @@ func setupTestClient(t *testing.T) (*client.OpenFgaClient, string, string) {
 	modelResp, err := fgaClient.WriteAuthorizationModel(t.Context()).Body(client.ClientWriteAuthorizationModelRequest{
 		SchemaVersion:   authModel.SchemaVersion,
 		TypeDefinitions: authModel.TypeDefinitions,
+		Conditions:      authModel.Conditions,
 	}).Execute()
 	if err != nil {
 		t.Fatalf("Failed to create authorization model: %v", err)

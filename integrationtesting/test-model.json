@@ -1,5 +1,16 @@
 {
     "schema_version": "1.1",
+    "conditions": {
+        "can_grant": {
+            "name": "can_grant",
+            "expression": "grantable == true",
+            "parameters": {
+                "grantable": {
+                    "type_name": "TYPE_NAME_BOOL"
+                }
+            }
+        }
+    },
     "type_definitions": [
         {
             "type": "user"
@@ -233,6 +244,26 @@
                         "directly_related_user_types": [
                             {
                                 "type": "user"
+                            }
+                        ]
+                    }
+                }
+            }
+        },
+        {
+            "type": "report",
+            "relations": {
+                "viewer": {
+                    "this": {}
+                }
+            },
+            "metadata": {
+                "relations": {
+                    "viewer": {
+                        "directly_related_user_types": [
+                            {
+                                "type": "user",
+                                "condition": "can_grant"
                             }
                         ]
                     }
