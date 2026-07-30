@@ -83,6 +83,12 @@ func ParseEntity(s string) (Entity, error) {
 	}, nil
 }
 
+// TupleWithCorrelationId represents a tuple with an associated correlation ID.
+type TupleWithCorrelationId struct {
+	*Tuple
+	CorrelationId string
+}
+
 // Tuple represents a relation between an object and a target. Note that OpenFGA
 // represents a Tuple as (User, Relation, Object). However, the `User` field is
 // not restricted to just being users, it could also refer to objects when we
@@ -118,6 +124,13 @@ func (t Tuple) ToOpenFGATupleKey() *openfga.TupleKey {
 func (t Tuple) ToOpenFGACheckRequestTupleKey() *openfga.CheckRequestTupleKey {
 	tk := t.ToOpenFGATupleKey()
 	return openfga.NewCheckRequestTupleKey(tk.User, tk.Relation, tk.Object)
+}
+
+// ToOpenFGACheckRequestTupleKey converts our Tuple struct into an
+// OpenFGA CheckRequestTupleKey.
+func (t TupleWithCorrelationId) ToOpenFGABatchCheckItem() *openfga.BatchCheckItem {
+	tk := t.ToOpenFGATupleKey()
+	return openfga.NewBatchCheckItem(*openfga.NewCheckRequestTupleKey(tk.User, tk.Relation, tk.Object), t.CorrelationId)
 }
 
 // ToOpenFGAExpandRequestTupleKey converts our Tuple struct into an
