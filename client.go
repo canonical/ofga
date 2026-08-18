@@ -208,9 +208,10 @@ func (c *Client) AddRelationIdempotent(ctx context.Context, tuples ...Tuple) err
 // BatchCheckRelations checks whether the specified relations exist (either directly or indirectly) between the objects and targets specified by the given tuples.
 // This method returns a map of correlation IDs to boolean values indicating whether the relation exists for each tuple.
 // The correlation ID is used to uniquely identify each tuple in the request and response.
+// Contextual tuples are scoped per item via TupleWithCorrelationId.ContextualTuples.
 // This API was introduced in OpenFGA v1.8.0.
 // The maximum number of tuples by default is 50.
-func (c *Client) BatchCheckRelations(ctx context.Context, tuples []TupleWithCorrelationId, contextualTuples ...Tuple) (map[string]bool, error) {
+func (c *Client) BatchCheckRelations(ctx context.Context, tuples []TupleWithCorrelationId) (map[string]bool, error) {
 	bcr := openfga.NewBatchCheckRequest(nil)
 	bcr.SetAuthorizationModelId(c.authModelID)
 
