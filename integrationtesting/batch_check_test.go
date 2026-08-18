@@ -67,6 +67,63 @@ func TestIntegrationBatchCheck(t *testing.T) {
 	}
 }
 
+func TestIntegrationBatchCheckWithContextualTuples(t *testing.T) {
+	// Setup OpenFGA client and store
+	fgaClient, storeID, _ := setupTestClient(t)
+	defer func() {
+		// Cleanup: delete the test store
+		_, _ = fgaClient.DeleteStore(t.Context()).Execute()
+	}()
+
+	// Create ofga client wrapper
+	ofgaClient, err := ofga.NewClient(
+		t.Context(),
+		ofga.OpenFGAParams{
+			Scheme:  "http",
+			Host:    "localhost",
+			Port:    "8080",
+			StoreID: storeID,
+		},
+	)
+	if err != nil {
+		t.Fatalf("Failed to create OpenFGA client: %v", err)
+	}
+
+	// The relation only exists as a contextual (non-persistent) tuple.
+	relation := ofga.Tuple{
+		Object:   &ofga.Entity{Kind: "user", ID: "alice"},
+		Relation: "editor",
+		Target:   &ofga.Entity{Kind: "document", ID: "readme"},
+	}
+
+	// Without the contextual tuple, the relation should be denied.
+	checkWithoutContext := ofga.TupleWithCorrelationId{
+		Tuple:         &relation,
+		CorrelationId: "without-context",
+	}
+	// With the contextual tuple attached to this item, it should be allowed.
+	checkWithContext := ofga.TupleWithCorrelationId{
+		Tuple:            &relation,
+		CorrelationId:    "with-context",
+		ContextualTuples: []ofga.Tuple{relation},
+	}
+
+	results, err := ofgaClient.BatchCheckRelations(t.Context(), []ofga.TupleWithCorrelationId{
+		checkWithoutContext,
+		checkWithContext,
+	})
+	if err != nil {
+		t.Fatalf("Failed to batch check relations: %v", err)
+	}
+
+	if results[checkWithoutContext.CorrelationId] {
+		t.Errorf("Expected relation to be denied without its contextual tuple")
+	}
+	if !results[checkWithContext.CorrelationId] {
+		t.Errorf("Expected relation to be allowed with its contextual tuple")
+	}
+}
+
 func TestIntegrationCheckMultipleRelations(t *testing.T) {
 	// Setup OpenFGA client and store
 	fgaClient, storeID, _ := setupTestClient(t)

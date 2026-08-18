@@ -84,9 +84,13 @@ func ParseEntity(s string) (Entity, error) {
 }
 
 // TupleWithCorrelationId represents a tuple with an associated correlation ID.
+// ContextualTuples are temporary, non-persistent relationship tuples that are
+// scoped to this individual check item, mirroring the per-item
+// `contextual_tuples` field of an OpenFGA BatchCheckItem.
 type TupleWithCorrelationId struct {
 	*Tuple
-	CorrelationId string
+	CorrelationId    string
+	ContextualTuples []Tuple
 }
 
 // Tuple represents a relation between an object and a target. Note that OpenFGA
@@ -126,11 +130,16 @@ func (t Tuple) ToOpenFGACheckRequestTupleKey() *openfga.CheckRequestTupleKey {
 	return openfga.NewCheckRequestTupleKey(tk.User, tk.Relation, tk.Object)
 }
 
-// ToOpenFGACheckRequestTupleKey converts our Tuple struct into an
-// OpenFGA CheckRequestTupleKey.
+// ToOpenFGABatchCheckItem converts our TupleWithCorrelationId struct into an
+// OpenFGA BatchCheckItem, including any per-item contextual tuples.
 func (t TupleWithCorrelationId) ToOpenFGABatchCheckItem() *openfga.BatchCheckItem {
 	tk := t.ToOpenFGATupleKey()
-	return openfga.NewBatchCheckItem(*openfga.NewCheckRequestTupleKey(tk.User, tk.Relation, tk.Object), t.CorrelationId)
+	item := openfga.NewBatchCheckItem(*openfga.NewCheckRequestTupleKey(tk.User, tk.Relation, tk.Object), t.CorrelationId)
+	if len(t.ContextualTuples) > 0 {
+		keys := tuplesToOpenFGATupleKeys(t.ContextualTuples)
+		item.SetContextualTuples(*openfga.NewContextualTupleKeys(keys))
+	}
+	return item
 }
 
 // ToOpenFGAExpandRequestTupleKey converts our Tuple struct into an
