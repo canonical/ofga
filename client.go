@@ -55,6 +55,7 @@ type OpenFGAParams struct {
 // OpenFgaApi defines the methods of the underlying api client that our Client
 // depends upon.
 type OpenFgaApi interface {
+	BatchCheck(ctx context.Context, storeId string) openfga.ApiBatchCheckRequest
 	Check(ctx context.Context, storeID string) openfga.ApiCheckRequest
 	CreateStore(ctx context.Context) openfga.ApiCreateStoreRequest
 	Expand(ctx context.Context, storeID string) openfga.ApiExpandRequest
@@ -202,6 +203,34 @@ func (c *Client) AddRelation(ctx context.Context, tuples ...Tuple) error {
 // It requires OpenFGA server version >= 1.10.0.
 func (c *Client) AddRelationIdempotent(ctx context.Context, tuples ...Tuple) error {
 	return c.AddRemoveRelationsIdempotent(ctx, tuples, nil)
+}
+
+// BatchCheckRelations checks whether the specified relations exist (either directly or indirectly) between the objects and targets specified by the given tuples.
+// This method returns a map of correlation IDs to boolean values indicating whether the relation exists for each tuple.
+// The correlation ID is used to uniquely identify each tuple in the request and response.
+// This API was introduced in OpenFGA v1.8.0.
+// The maximum number of tuples by default is 50.
+func (c *Client) BatchCheckRelations(ctx context.Context, tuples []TupleWithCorrelationId, contextualTuples ...Tuple) (map[string]bool, error) {
+	bcr := openfga.NewBatchCheckRequest(nil)
+	bcr.SetAuthorizationModelId(c.authModelID)
+
+	checkRequests := make([]openfga.BatchCheckItem, 0, len(tuples))
+	for _, tuple := range tuples {
+		checkRequests = append(checkRequests, *tuple.ToOpenFGABatchCheckItem())
+	}
+	bcr.SetChecks(checkRequests)
+
+	resp, _, err := c.api.BatchCheck(ctx, c.storeID).Body(*bcr).Execute()
+	if err != nil {
+		slog.ErrorContext(ctx, fmt.Sprintf("cannot execute BatchCheck request: %v", err))
+		return nil, fmt.Errorf("cannot batch check relations: %v", err)
+	}
+
+	results := make(map[string]bool, len(resp.GetResult()))
+	for key, result := range resp.GetResult() {
+		results[key] = result.GetAllowed()
+	}
+	return results, nil
 }
 
 // CheckRelation checks whether the specified relation exists (either directly
