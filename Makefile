@@ -19,7 +19,7 @@ $(STATICCHECK):
 	go install honnef.co/go/tools/cmd/staticcheck@v0.6.1
 
 $(GOVULNCHECK):
-	go install golang.org/x/vuln/cmd/govulncheck@latest
+	go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
 
 $(GOSEC):
 	go install github.com/securego/gosec/v2/cmd/gosec@v2.22.11
